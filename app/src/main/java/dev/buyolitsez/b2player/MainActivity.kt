@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun HomeScreen(cat: Catalog) {
         val tabs = listOf("Альбомы", "Исполнители", "Любимые", "Офлайн")
-        TabRow(tab) { tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t, maxLines = 1) }) } }
+        ScrollableTabRow(tab, edgePadding = 0.dp) { tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t, maxLines = 1) }) } }
         when (tab) {
             0 -> AlbumList(cat.albums)
             1 -> LazyColumn {
