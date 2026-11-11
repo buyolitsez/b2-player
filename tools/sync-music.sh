@@ -3,6 +3,7 @@
 #
 #   tools/sync-music.sh                 # full sync of ~/Music -> b2music:buyolitsez-music/music
 #   tools/sync-music.sh --dry-run       # show what would change
+#   WAIT_FOR_RESTIC=1 tools/sync-music.sh   # wait until the restic backup finishes, then sync
 #   tools/sync-music.sh -- "rock/Pink Floyd/1973 - ..."   # copy only these subfolders (tests)
 #
 # Full sync deletes from the bucket what was deleted locally; B2 keeps the
@@ -19,7 +20,11 @@ while [ $# -gt 0 ]; do
   flags+=("$1"); shift
 done
 
-if [ ${#only[@]} -eq 0 ] && { tmux has-session -t restic-backup 2>/dev/null || pgrep -x restic >/dev/null; }; then
+restic_running() { pgrep -x restic >/dev/null || pgrep -f "restic/backup.sh" >/dev/null; }
+if [ ${#only[@]} -eq 0 ] && [ "${WAIT_FOR_RESTIC:-}" = 1 ]; then
+  while restic_running; do sleep 300; done
+fi
+if [ ${#only[@]} -eq 0 ] && restic_running; then
   echo "restic backup is running; full upload would compete for the uplink. Try later." >&2
   exit 1
 fi
