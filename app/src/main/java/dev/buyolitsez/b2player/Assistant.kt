@@ -1,6 +1,7 @@
 package dev.buyolitsez.b2player
 
 import android.content.Intent
+import android.os.SystemClock
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,6 +60,8 @@ import org.json.JSONObject
 sealed interface ChatEntry {
     data class User(val text: String) : ChatEntry
     data class Reply(val text: String, val error: Boolean = false) : ChatEntry
+    /** How long the assistant took to answer, without the time spent waiting for Apply or Cancel. */
+    data class Took(val ms: Long) : ChatEntry
     /** A change to likes or playlists waiting for Apply or Cancel. */
     class Confirm(val change: AssistantTools.Change) : ChatEntry {
         val decision = CompletableDeferred<Boolean>()
@@ -82,6 +85,7 @@ class Assistant(private val ui: Ui) {
     private val messages = ArrayList<MessageParam>()
     private var tools: AssistantTools? = null
     private var system = ""
+    private var confirmWait = 0L
 
     fun clear() {
         if (busy) return
@@ -101,6 +105,8 @@ class Assistant(private val ui: Ui) {
         val start = messages.size
         messages.add(MessageParam.ofUser(t.playerState() + "\n" + text.trim()))
         busy = true
+        val started = SystemClock.elapsedRealtime()
+        confirmWait = 0L
         ui.scope.launch {
             try {
                 converse(t)
@@ -110,6 +116,7 @@ class Assistant(private val ui: Ui) {
                 while (messages.size > start) messages.removeAt(messages.size - 1)
                 entries.add(ChatEntry.Reply(e.message ?: e.toString(), error = true))
             } finally {
+                entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
                 busy = false
             }
         }
@@ -159,7 +166,10 @@ class Assistant(private val ui: Ui) {
         if (r !is AssistantTools.Change) return r as String
         val confirm = ChatEntry.Confirm(r)
         entries.add(confirm)
-        return if (confirm.decision.await()) r.apply() else "The user cancelled this change"
+        val asked = SystemClock.elapsedRealtime()
+        val ok = confirm.decision.await()
+        confirmWait += SystemClock.elapsedRealtime() - asked
+        return if (ok) r.apply() else "The user cancelled this change"
     }
 
     companion object {
@@ -248,6 +258,8 @@ private fun ChatBubble(e: ChatEntry) {
             if (e.error) Text(e.text, color = MaterialTheme.colorScheme.error)
             else Text(remember(e.text) { markdown(e.text) })
         }
+        is ChatEntry.Took -> Text(if (e.ms < 1000) "${e.ms} ms" else "${e.ms / 100 / 10.0} s",
+            style = MaterialTheme.typography.labelSmall, color = Muted)
         is ChatEntry.Confirm -> Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Gray1).padding(10.dp)) {
             Text(e.change.title, fontWeight = FontWeight.Bold)
             e.change.tracks.take(12).forEach { Text("${it.artist} — ${it.title}", style = MaterialTheme.typography.bodySmall, color = Muted) }
