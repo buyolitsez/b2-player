@@ -33,6 +33,8 @@ sealed interface Screen {
     data object LikedView : Screen
     data object HistoryView : Screen
     data object Downloads : Screen
+    data object LyricsView : Screen
+    data object EqualizerView : Screen
     data object Settings : Screen
 }
 
@@ -122,6 +124,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val start = tracks.getOrNull(index)?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val before = snapshot()
         c.shuffleModeEnabled = shuffled
+        AppLog.d("ui", "Play ${list.size} tracks from ${list.first().album.dir}, start $start, shuffle $shuffled")
         c.setMediaItems(list.map { library.mediaItem(it) }, if (shuffled) list.indices.random() else start, 0)
         c.prepare(); c.play()
         if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
@@ -289,6 +292,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             }
         }
         version++; syncPlaylists()
+        AppLog.i("m3u", "Imported " + result.joinToString { (n, ok, miss) -> "$n: $ok found, $miss missing" })
         toast(result.joinToString("; ") { (n, ok, miss) -> "$n: $ok tracks" + if (miss > 0) ", $miss not found" else "" })
     }
 
@@ -298,6 +302,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         app.lastFm.apiKey = apiKey; app.lastFm.secret = secret
         val err = withContext(Dispatchers.IO) { runCatching { app.lastFm.login(user, password) }.exceptionOrNull() }
         version++
+        if (err != null) AppLog.w("lastfm", "Login failed", err) else AppLog.i("lastfm", "Connected")
         toast(if (err == null) "Connected to Last.fm as ${app.lastFm.user}" else err.message ?: "Last.fm login failed")
     }
 
@@ -307,7 +312,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     private fun syncInBackground(block: () -> Unit) = scope.launch {
         val err = withContext(Dispatchers.IO) { runCatching(block).exceptionOrNull() }
-        if (err != null) status = "Sync failed: ${err.message}"
+        if (err != null) { status = "Sync failed: ${err.message}"; AppLog.w("sync", "Sync failed", err) }
     }
 
     fun toast(s: String) {
@@ -317,6 +322,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun refreshCatalog() = scope.launch {
         if (!app.b2.settings.complete) return@launch
         status = "Updating library…"
+        val started = System.currentTimeMillis()
         status = try {
             val bytes = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
             app.catalog.value = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
@@ -328,8 +334,10 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
                 runCatching { app.lastFm.flush() }
             }
             version++
+            AppLog.i("catalog", "Loaded ${app.catalog.value?.albums?.size} albums, ${bytes.size / 1024} KB, ${System.currentTimeMillis() - started} ms")
             null
         } catch (e: Exception) {
+            AppLog.e("catalog", "Library update failed", e)
             "Couldn't load the library: ${e.message}"
         }
     }

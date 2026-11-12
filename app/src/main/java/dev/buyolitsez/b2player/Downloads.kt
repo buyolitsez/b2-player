@@ -29,9 +29,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             setProgress(workDataOf("title" to title, "done" to i, "total" to paths.size))
             val dst = app.library.offlineFile(p)
             if (!dst.exists()) {
-                try { app.b2.download(Library.MUSIC + p, dst) } catch (e: Exception) { failed++ }
+                try { app.b2.download(Library.MUSIC + p, dst) } catch (e: Exception) { failed++; AppLog.w("download", "Failed: $p", e) }
             }
         }
+        AppLog.i("download", "$title: ${paths.size - failed} of ${paths.size} done, attempt ${runAttemptCount + 1}")
         if (failed > 0 && runAttemptCount < 3) Result.retry() else Result.success()
     }
 

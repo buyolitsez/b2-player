@@ -42,6 +42,7 @@ class PlaybackService : MediaSessionService() {
     private var counted = false
     private var lastHistorySync = 0L
     private var listenJob: Job? = null
+    private var bufferingSince = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -58,10 +59,18 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.skipSilenceEnabled = app.prefs.skipSilence.value
         player.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) { app.audioFx.attach(audioSessionId) }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && lastId != null && lastId == app.stopAfterId.value) {
                     player.pause(); app.stopAfterId.value = null
+                    AppLog.i("player", "Stopped after $lastId as asked")
                 }
+                val album = app.sleepAfterAlbum.value
+                if (album != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && track(item)?.album?.id != album) {
+                    player.pause(); app.sleepAfterAlbum.value = null
+                    AppLog.i("player", "Sleep timer: album finished")
+                }
+                AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) sendNowPlaying(item)
@@ -69,6 +78,17 @@ class PlaybackService : MediaSessionService() {
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                AppLog.e("player", "${error.errorCodeName} on ${player.currentMediaItem?.mediaId}", error)
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                val now = System.currentTimeMillis()
+                if (state == Player.STATE_BUFFERING && player.playWhenReady) bufferingSince = now
+                else if (bufferingSince > 0) {
+                    val ms = now - bufferingSince; bufferingSince = 0
+                    if (ms > 3000) AppLog.w("player", "Buffered ${ms / 1000} s on ${player.currentMediaItem?.mediaId}")
+                }
             }
             override fun onEvents(p: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
@@ -82,6 +102,14 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(open)
             .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(app.dataSourceFactory).build()))
             .setCallback(object : MediaSession.Callback {
+                override fun onMediaButtonEvent(s: MediaSession, c: MediaSession.ControllerInfo, intent: Intent): Boolean {
+                    if (!app.prefs.headsetGestures.value) return false
+                    @Suppress("DEPRECATION")
+                    val ev = intent.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
+                    if (ev.keyCode != android.view.KeyEvent.KEYCODE_HEADSETHOOK && ev.keyCode != android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return false
+                    if (ev.action == android.view.KeyEvent.ACTION_DOWN && ev.repeatCount == 0) headsetPress(player)
+                    return true
+                }
                 // Items from the controller arrive without their URI; restore it from request metadata.
                 override fun onAddMediaItems(
                     s: MediaSession, c: MediaSession.ControllerInfo, items: MutableList<MediaItem>,
@@ -90,21 +118,49 @@ class PlaybackService : MediaSessionService() {
                 )
             })
             .build()
+        if (player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) app.audioFx.attach(player.audioSessionId)
         if (app.prefs.restoreQueue.value) restoreQueue(player)
         listenJob = trackListening(player)
+    }
+
+    private var presses = 0
+    private var pressJob: Job? = null
+
+    /** One press: play/pause; two: next track; three: previous track. */
+    private fun headsetPress(player: Player) {
+        presses++
+        pressJob?.cancel()
+        pressJob = app.scope.launch(Dispatchers.Main) {
+            delay(450)
+            val n = presses; presses = 0
+            AppLog.d("player", "Headset button x$n")
+            when (n) {
+                1 -> if (player.isPlaying) player.pause() else player.play()
+                2 -> player.seekToNextMediaItem()
+                else -> player.seekToPrevious()
+            }
+        }
     }
 
     private fun track(item: MediaItem?) = item?.mediaId?.let { app.catalog.value?.byId?.get(it) }
 
     private fun sendNowPlaying(item: MediaItem?) {
         val t = track(item) ?: return
-        app.scope.launch(Dispatchers.IO) { runCatching { app.lastFm.nowPlaying(t) } }
+        app.scope.launch(Dispatchers.IO) { runCatching { app.lastFm.nowPlaying(t) }.onFailure { AppLog.w("lastfm", "Now playing failed", it) } }
     }
 
     /** Counts a play once half the track or 4 minutes were heard (Last.fm rules; tracks under 30 s don't count). */
     private fun trackListening(player: ExoPlayer) = app.scope.launch(Dispatchers.Main) {
         while (true) {
             delay(1000)
+            app.sleepAt.value?.let { at ->
+                val left = at - System.currentTimeMillis()
+                when {
+                    left <= 0 -> { player.pause(); player.volume = 1f; app.sleepAt.value = null; AppLog.i("player", "Sleep timer: paused") }
+                    left < 10_000 -> player.volume = left / 10_000f   // fade out over the last 10 s
+                }
+            }
+            if (app.sleepAt.value == null && player.volume < 1f) player.volume = 1f
             if (!player.isPlaying) continue
             player.skipSilenceEnabled = app.prefs.skipSilence.value
             listenedMs += 1000
@@ -115,10 +171,10 @@ class PlaybackService : MediaSessionService() {
             app.scope.launch(Dispatchers.IO) {
                 if (app.prefs.recordHistory.value) app.history.record(t.id, at)
                 app.lastFm.enqueue(t, at)
-                runCatching { app.lastFm.flush() }
+                runCatching { app.lastFm.flush() }.onFailure { AppLog.w("lastfm", "Scrobble failed, ${app.lastFm.pendingCount} pending", it) }
                 if (System.currentTimeMillis() - lastHistorySync > 10 * 60_000) {
                     lastHistorySync = System.currentTimeMillis()
-                    runCatching { app.history.sync(app.b2) }
+                    runCatching { app.history.sync(app.b2) }.onFailure { AppLog.w("sync", "History sync failed", it) }
                 }
             }
         }
@@ -175,6 +231,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         listenJob?.cancel()
+        app.audioFx.release()
         prefetching.forEach { it.cancel() }
         prefetchExecutor.shutdown()
         session?.run { player.release(); release() }

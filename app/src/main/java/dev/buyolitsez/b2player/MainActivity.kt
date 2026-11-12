@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         ui.controller?.release(); ui.controller = null
+        (application as App).uploadLogs()
         super.onStop()
     }
 }
@@ -109,6 +110,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         Screen.LikedView -> "Liked"
                         Screen.HistoryView -> "History"
                         Screen.Downloads -> "Downloads"
+                        Screen.LyricsView -> "Lyrics"
+                        Screen.EqualizerView -> "Equalizer"
                         Screen.Settings -> "Settings"
                         Screen.Root -> ui.tab.title
                     }
@@ -160,6 +163,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                 screen == Screen.Settings -> SettingsScreen(ui, c)
                 c == null -> Placeholder("The library isn't loaded yet")
                 screen == Screen.Downloads -> DownloadsScreen(ui, c)
+                screen == Screen.LyricsView -> LyricsScreen(ui, c)
+                screen == Screen.EqualizerView -> EqualizerScreen(ui)
                 screen is Screen.AlbumView -> AlbumScreen(ui, screen.album)
                 screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
                 screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)

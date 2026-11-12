@@ -31,6 +31,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
     var pos by remember { mutableLongStateOf(0L) }
     var dragging by remember { mutableStateOf<Float?>(null) }
     var info by remember { mutableStateOf(false) }
+    var sleep by remember { mutableStateOf(false) }
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(500) } }
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     val accent = MaterialTheme.colorScheme.primary
@@ -45,6 +46,9 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         Text(t.artist, color = Color(0xFFCCCCCC), modifier = Modifier.clickable { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) })
         Text(t.album.title, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1,
             modifier = Modifier.clickable { ui.open(Screen.AlbumView(t.album), Tab.Albums) })
+        sleepLabel(ui)?.let {
+            Text(it, Modifier.padding(top = 4.dp).clickable { sleep = true }, style = MaterialTheme.typography.bodySmall, color = accent)
+        }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, if (ui.liked(t)) accent else Color.White) { ui.toggleLike(t) }
@@ -68,6 +72,9 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
                     @Composable
                     fun item(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, action: () -> Unit) =
                         DropdownMenuItem({ Text(text) }, { menu = false; action() }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
+                    item("Lyrics", Icons.Default.Lyrics) { ui.open(Screen.LyricsView) }
+                    item("Sleep timer", Icons.Default.Bedtime) { sleep = true }
+                    item("Equalizer", Icons.Default.Equalizer) { ui.open(Screen.EqualizerView) }
                     item(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle) { ui.stopAfter(t) }
                     item("Add to playlist…", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = listOf(t) }
                     item("Go to album", Icons.Default.Album) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
@@ -106,6 +113,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
             }
         }
     }
+    if (sleep) SleepTimerDialog(ui) { sleep = false }
     if (info) {
         AlertDialog({ info = false }, confirmButton = { TextButton({ info = false }) { Text("OK") } },
             title = { Text("File info") }, containerColor = Gray2,

@@ -15,7 +15,7 @@ import java.util.zip.GZIPInputStream
 data class Track(
     val path: String, val title: String, val artist: String, val album: Album,
     val number: Int?, val disc: Int?, val duration: Double, val start: Double?, val size: Long,
-    val likedInCatalog: Boolean,
+    val likedInCatalog: Boolean, val hasLyrics: Boolean = false,
 ) {
     /** Unique per track; CUE tracks share a file, so the start offset is part of the id. */
     val id get() = if (start == null) path else "$path#$start"
@@ -79,7 +79,7 @@ class Catalog(val albums: List<Album>) {
                         t.getString("path"), t.getString("title"), t.optString("artist", album.artist), album,
                         if (t.has("track")) t.getInt("track") else null, if (t.has("disc")) t.getInt("disc") else null,
                         t.optDouble("duration", 0.0), if (t.has("start")) t.getDouble("start") else null,
-                        t.optLong("size", 0), t.optBoolean("liked", false),
+                        t.optLong("size", 0), t.optBoolean("liked", false), t.optBoolean("ly", false),
                     )
                 }
                 albums.add(album)

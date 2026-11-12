@@ -60,6 +60,18 @@ class Prefs(context: Context) {
     val coverTint = Bool("coverTint", true)
     // History
     val recordHistory = Bool("recordHistory", true)
+    // Lyrics, controls, diagnostics
+    val onlineLyrics = Bool("onlineLyrics", true)
+    val headsetGestures = Bool("headsetGestures", true)
+    val verboseLogs = Bool("verboseLogs", false)
+    val uploadLogs = Bool("uploadLogs", true)
+    var lastLogUpload: Long
+        get() = p.getLong("lastLogUpload", 0)
+        set(v) = p.edit().putLong("lastLogUpload", v).apply()
+    /** "key fileId" of the last uploaded log version, deleted when the same day's log is uploaded again. */
+    var lastLogFile: String
+        get() = p.getString("lastLogFile", "")!!
+        set(v) = p.edit().putString("lastLogFile", v).apply()
     // Storage
     val cacheGb = Num("cacheGb", 4)
 
@@ -75,6 +87,8 @@ class App : Application() {
     lateinit var playlists: Playlists
     lateinit var history: History
     lateinit var lastFm: LastFm
+    lateinit var audioFx: AudioFx
+    lateinit var lyrics: LyricsRepo
     lateinit var cache: SimpleCache
     lateinit var dataSourceFactory: DataSource.Factory
     /** Cache-backed b2:// source, also used to prefetch upcoming tracks. */
@@ -83,15 +97,43 @@ class App : Application() {
     val catalog = MutableStateFlow<Catalog?>(null)
     /** Pause when the track with this id ends ("stop after this track"). */
     val stopAfterId = MutableStateFlow<String?>(null)
+    /** Sleep timer: pause at this time (epoch ms), or when the album changes after the one in [sleepAfterAlbum]. */
+    val sleepAt = MutableStateFlow<Long?>(null)
+    val sleepAfterAlbum = MutableStateFlow<String?>(null)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Copies the log to logs/<date>.log in the bucket when there were problems since the last
+     * upload (or when forced). Only the newest version of each day's file is kept.
+     */
+    fun uploadLogs(force: Boolean = false) = scope.launch(Dispatchers.IO) {
+        if (!b2.settings.complete || (!force && (!prefs.uploadLogs.value || !AppLog.hasNewProblems))) return@launch
+        if (!force && System.currentTimeMillis() - prefs.lastLogUpload < 10 * 60_000) return@launch
+        try {
+            val key = "logs/" + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()) + ".log"
+            val text = AppLog.text().takeLast(1_000_000)
+            AppLog.hasNewProblems = false
+            val id = b2.upload(key, text.toByteArray(), "text/plain")
+            val (oldKey, oldId) = prefs.lastLogFile.split(' ').let { (it.getOrNull(0) ?: "") to (it.getOrNull(1) ?: "") }
+            if (oldKey == key && oldId.isNotEmpty() && oldId != id) runCatching { b2.deleteVersion(oldKey, oldId) }
+            prefs.lastLogFile = "$key $id"
+            prefs.lastLogUpload = System.currentTimeMillis()
+        } catch (e: Exception) {
+            AppLog.hasNewProblems = true
+            android.util.Log.w("B2P/log", "Log upload failed", e)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        AppLog.init(this, prefs.verboseLogs.value)
         b2 = B2(this)
         playlists = Playlists(this)
         history = History(this)
         lastFm = LastFm(this)
+        audioFx = AudioFx(this)
+        lyrics = LyricsRepo(this)
         cache = SimpleCache(
             File(cacheDir, "media"), LeastRecentlyUsedCacheEvictor(prefs.cacheGb.value.toLong() shl 30),
             StandaloneDatabaseProvider(this),

@@ -46,6 +46,7 @@ class B2(private val context: Context) {
         c.connectTimeout = 15000; c.readTimeout = 15000
         if (c.responseCode != 200) {
             val err = c.errorStream?.bufferedReader()?.readText().orEmpty()
+            AppLog.e("b2", "Authorize failed: HTTP ${c.responseCode}")
             throw IOException("B2 authorize failed: HTTP ${c.responseCode} $err")
         }
         val j = JSONObject(c.inputStream.bufferedReader().readText())
@@ -75,6 +76,7 @@ class B2(private val context: Context) {
                 200 -> return c
                 401 -> if (attempt == 0) { invalidate(); return@repeat }
             }
+            AppLog.w("b2", "GET $key: HTTP ${c.responseCode}")
             throw IOException("GET $key: HTTP ${c.responseCode}")
         }
         throw IOException("GET $key: unauthorized")
@@ -97,8 +99,8 @@ class B2(private val context: Context) {
         JSONObject().put("accountId", a.accountId).put("bucketName", settings.bucket),
     ).getJSONArray("buckets").getJSONObject(0).getString("bucketId")
 
-    /** Uploads a small file (needs a key with writeFiles). */
-    fun upload(key: String, bytes: ByteArray, contentType: String) {
+    /** Uploads a small file (needs a key with writeFiles) and returns its fileId. */
+    fun upload(key: String, bytes: ByteArray, contentType: String): String {
         val a = auth()
         val up = post("${a.apiUrl}/b2api/v2/b2_get_upload_url", a.token, JSONObject().put("bucketId", bucketId(a)))
         val c = URL(up.getString("uploadUrl")).openConnection() as HttpURLConnection
@@ -111,6 +113,13 @@ class B2(private val context: Context) {
         c.connectTimeout = 15000; c.readTimeout = 30000
         c.outputStream.use { it.write(bytes) }
         if (c.responseCode != 200) throw IOException("upload $key: HTTP ${c.responseCode}")
+        return JSONObject(c.inputStream.bufferedReader().readText()).getString("fileId")
+    }
+
+    /** Removes one stored version of a file (the bucket keeps old versions otherwise). */
+    fun deleteVersion(key: String, fileId: String) {
+        val a = auth()
+        post("${a.apiUrl}/b2api/v2/b2_delete_file_version", a.token, JSONObject().put("fileName", key).put("fileId", fileId))
     }
 
     /** Small object as bytes, or null when it does not exist. */

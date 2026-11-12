@@ -113,6 +113,13 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
             dismissButton = { TextButton({ confirmClear = false }) { Text("Cancel") } },
         )
 
+        // ---------- lyrics and controls ----------
+        SettingsHeader("Lyrics and controls")
+        SettingSwitch("Online lyrics", "Look up synced lyrics on lrclib.net (sends artist and title)", p.onlineLyrics)
+        SettingAction("Clear lyrics cache", "Look the lyrics up again") { app.lyrics.clearCache(); ui.toast("Lyrics cache cleared") }
+        SettingSwitch("Headset button gestures", "Press twice: next track; three times: previous", p.headsetGestures)
+        SettingAction("Equalizer", if (app.audioFx.enabled) "On" else "Off") { ui.open(Screen.EqualizerView) }
+
         // ---------- storage ----------
         SettingsHeader("Storage")
         var cacheGb by remember { mutableFloatStateOf(p.cacheGb.value.toFloat()) }
@@ -123,6 +130,14 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
             Slider(cacheGb, { cacheGb = it }, valueRange = 1f..50f, steps = 48, onValueChangeFinished = { p.cacheGb.set(cacheGb.toInt()) })
         }
         SettingAction("Clear stream cache", "Downloads are kept") { ui.library.clearCache(); ui.version++; ui.toast("Cache cleared") }
+
+        SettingsHeader("Diagnostics")
+        SettingSwitch("Detailed logs", "Also log every track change and action; applies after restart", p.verboseLogs)
+        SettingSwitch("Upload logs after problems", "Copies the log to logs/<date>.log in the bucket when something failed", p.uploadLogs)
+        SettingAction("Upload logs now", "Log on the phone: ${formatSize(AppLog.sizeBytes())}, never more than about 1.5 MB") {
+            AppLog.i("app", "Manual log upload"); app.uploadLogs(force = true); ui.toast("Uploading logs")
+        }
+        SettingAction("Clear logs", null) { AppLog.clear(); ui.version++; ui.toast("Logs cleared") }
 
         SettingsHeader("About")
         Text("B2 Player ${ui.context.packageManager.getPackageInfo(ui.context.packageName, 0).versionName}",

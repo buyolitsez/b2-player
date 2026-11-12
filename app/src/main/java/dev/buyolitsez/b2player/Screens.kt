@@ -18,6 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -84,6 +88,7 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
 fun SearchTab(ui: Ui, cat: Catalog) {
     val q = ui.query.trim()
     val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     val albums = remember(cat, q) {
         if (q.length < 2) emptyList() else cat.albums.filter { it.title.contains(q, true) || it.artist.contains(q, true) }
@@ -96,12 +101,16 @@ fun SearchTab(ui: Ui, cat: Catalog) {
             ui.query, { ui.query = it }, Modifier.fillMaxWidth().padding(10.dp).focusRequester(focus), singleLine = true,
             placeholder = { Text("Artist, album or track") }, leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { if (ui.query.isNotEmpty()) SmallIcon(Icons.Default.Close) { ui.query = "" } },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         )
         LazyColumn {
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
             items(albums.take(30), key = { "a" + it.id }) { AlbumRow(ui, it) }
             if (tracks.isNotEmpty()) item { SectionTitle("Tracks") }
-            itemsIndexed(tracks, key = { _, t -> "t" + t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
+            itemsIndexed(tracks, key = { _, t -> "t" + t.id }) { i, t ->
+                TrackRow(ui, t, showCover = true, onClick = { focusManager.clearFocus(); ui.play(tracks, i) })
+            }
         }
     }
 }
