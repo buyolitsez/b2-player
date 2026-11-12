@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,8 +52,11 @@ import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.Tool
 import com.anthropic.models.messages.ToolResultBlockParam
 import com.anthropic.models.messages.WebSearchTool20260209
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -80,21 +84,27 @@ class Assistant(private val ui: Ui) {
 
     val entries = mutableStateListOf<ChatEntry>()
     var busy by mutableStateOf(false); private set
+    /** Messages written while the assistant is busy, sent together when its turn ends. */
+    val queued = mutableStateListOf<String>()
 
     private var client: AnthropicClient? = null
     private val messages = ArrayList<MessageParam>()
     private var tools: AssistantTools? = null
     private var system = ""
     private var confirmWait = 0L
+    private var job: Job? = null
 
     fun clear() {
         if (busy) return
         entries.clear(); messages.clear(); tools = null
     }
 
+    fun stop() { job?.cancel() }
+
     fun send(text: String) {
         val cat = ui.app.catalog.value
-        if (busy || text.isBlank() || cat == null) return
+        if (text.isBlank() || cat == null) return
+        if (busy) { queued.add(text.trim()); return }
         // Handles are catalog indices: a reloaded catalog starts a new conversation.
         if (tools?.let { it.cat !== cat } != false) {
             messages.clear()
@@ -107,17 +117,24 @@ class Assistant(private val ui: Ui) {
         busy = true
         val started = SystemClock.elapsedRealtime()
         confirmWait = 0L
-        ui.scope.launch {
+        job = ui.scope.launch {
             try {
                 converse(t)
+                entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
+            } catch (e: CancellationException) {
+                // Keep the user's message so a correction sent next is read with it.
+                while (messages.size > start + 1) messages.removeAt(messages.size - 1)
+                entries.filterIsInstance<ChatEntry.Confirm>().forEach { it.answer(false) }
+                entries.add(ChatEntry.Reply("Stopped", error = true))
             } catch (e: Exception) {
                 AppLog.w("assistant", "Request failed", e)
                 // Drop the unfinished turn, so the next message starts from a valid conversation.
                 while (messages.size > start) messages.removeAt(messages.size - 1)
                 entries.add(ChatEntry.Reply(e.message ?: e.toString(), error = true))
-            } finally {
                 entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
+            } finally {
                 busy = false
+                if (queued.isNotEmpty()) send(queued.joinToString("\n").also { queued.clear() })
             }
         }
     }
@@ -138,7 +155,8 @@ class Assistant(private val ui: Ui) {
                 .putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
                 .messages(messages.toList())
                 .build()
-            val response = withContext(Dispatchers.IO) { c.messages().create(params) }
+            // Async, so that Stop doesn't wait for the response.
+            val response = c.async().messages().create(params).await()
             messages.add(response.toParam())
             response.content().mapNotNull { it.text().orElse(null)?.text()?.trim() }.filter { it.isNotEmpty() }
                 .forEach { entries.add(ChatEntry.Reply(it)) }
@@ -218,10 +236,10 @@ fun AssistantScreen(ui: Ui) {
     }
     var input by remember { mutableStateOf("") }
     val list = rememberLazyListState()
-    LaunchedEffect(a.entries.size, a.busy) { if (a.entries.isNotEmpty()) list.animateScrollToItem(a.entries.size) }
-    // Android's own speech recognition dialog: no microphone permission needed, the text is sent right away.
+    LaunchedEffect(a.entries.size, a.busy, a.queued.size) { if (a.entries.isNotEmpty()) list.animateScrollToItem(a.entries.size + a.queued.size) }
+    // Android's own speech recognition dialog: no microphone permission needed. The text goes into the field to edit and send.
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { a.send(it) }
+        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { input = if (input.isBlank()) it else "${input.trimEnd()} $it" }
     }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -231,19 +249,22 @@ fun AssistantScreen(ui: Ui) {
             }
             items(a.entries) { e -> ChatBubble(e) }
             item { if (a.busy) Text("…", color = Muted) }
+            items(a.queued) { Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) { Text(it, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray1).padding(10.dp, 6.dp), color = Muted) } }
         }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Message") }, maxLines = 4,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (!a.busy) { a.send(input); input = "" } }))
+                keyboardActions = KeyboardActions(onSend = { a.send(input); input = "" }))
             IconButton({
                 runCatching {
                     speech.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                         .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU"))
                 }.onFailure { ui.toast("Speech recognition isn't available") }
-            }, enabled = !a.busy) { Icon(Icons.Default.Mic, "Speak") }
-            IconButton({ a.send(input); input = "" }, enabled = !a.busy && input.isNotBlank()) { Icon(Icons.AutoMirrored.Filled.Send, "Send") }
+            }) { Icon(Icons.Default.Mic, "Speak") }
+            // While the assistant works, an empty field offers Stop; a typed message is queued for after its turn.
+            if (a.busy && input.isBlank()) IconButton({ a.stop() }) { Icon(Icons.Default.Stop, "Stop") }
+            else IconButton({ a.send(input); input = "" }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Filled.Send, "Send") }
         }
     }
 }
