@@ -36,12 +36,14 @@ sealed interface Screen {
     data object Downloads : Screen
     data object EqualizerView : Screen
     data object Settings : Screen
+    data object Assistant : Screen
 }
 
 /** All UI state and actions, shared by the composables. */
 @UnstableApi
 class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     val covers = Covers(app)
+    val assistant = Assistant(this)
     val snackbar = SnackbarHostState()
     val library get() = app.library
     val prefs get() = app.prefs
@@ -242,13 +244,18 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     // ---------- likes and downloads ----------
 
-    fun toggleLike(t: Track) {
-        val liked = !library.isLiked(t)
-        library.setLiked(t, liked)
+    fun toggleLike(t: Track) = setLiked(listOf(t), !library.isLiked(t))
+
+    fun setLiked(tracks: List<Track>, liked: Boolean) {
+        val changed = tracks.filter { library.isLiked(it) != liked }
+        if (changed.isEmpty()) return
+        changed.forEach { library.setLiked(it, liked) }
         if (liked && prefs.autoDownloadLiked.value) {
-            DownloadWorker.enqueue(context, "like:${t.id}", t.title, listOf(t), wifiOnly = prefs.autoWifiOnly.value)
+            val one = changed.singleOrNull()
+            DownloadWorker.enqueue(context, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
+                one?.title ?: "${changed.size} liked tracks", changed, wifiOnly = prefs.autoWifiOnly.value)
         }
-        if (!liked && prefs.deleteOnUnlike.value) library.deleteDownload(t)
+        if (!liked && prefs.deleteOnUnlike.value) changed.forEach { library.deleteDownload(it) }
         version++
         syncInBackground { library.syncLikes(app.b2) }
     }

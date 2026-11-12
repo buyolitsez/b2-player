@@ -101,6 +101,17 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
             }
         }
 
+        // ---------- assistant ----------
+        SettingsHeader("Assistant")
+        var claudeKey by remember { mutableStateOf(ui.assistant.apiKey) }
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Chat that controls the player, on ${Assistant.MODEL}. Create a key at platform.claude.com; requests are billed to it.",
+                style = MaterialTheme.typography.bodySmall, color = Muted)
+            OutlinedTextField(claudeKey, { claudeKey = it }, Modifier.fillMaxWidth(), label = { Text("Claude API key") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation())
+            Pill("Save", active = true) { ui.assistant.apiKey = claudeKey; ui.version++; ui.toast("Saved") }
+        }
+
         // ---------- history ----------
         SettingsHeader("History")
         SettingSwitch("Keep listening history", "Used for stats; synced to the bucket", p.recordHistory)

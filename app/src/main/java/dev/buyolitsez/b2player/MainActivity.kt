@@ -136,6 +136,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         Screen.Downloads -> "Downloads"
                         Screen.EqualizerView -> "Equalizer"
                         Screen.Settings -> "Settings"
+                        Screen.Assistant -> "Assistant"
                         Screen.Root -> ui.tab.title
                     }
                     Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
@@ -149,6 +150,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
                         }
                     }
+                    if (screen == Screen.Assistant) IconButton({ ui.assistant.clear() }) { Icon(Icons.Default.DeleteSweep, "New chat") }
+                    else IconButton({ ui.open(Screen.Assistant) }) { Icon(Icons.Default.AutoAwesome, "Assistant") }
                     var menu by remember { mutableStateOf(false) }
                     Box {
                         IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
@@ -190,6 +193,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                 screen == Screen.Settings -> SettingsScreen(ui, c)
                 c == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
                 screen == Screen.Downloads -> DownloadsScreen(ui, c)
+                screen == Screen.Assistant -> AssistantScreen(ui)
                 screen == Screen.EqualizerView -> EqualizerScreen(ui)
                 screen is Screen.AlbumView -> AlbumScreen(ui, screen.album)
                 screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
