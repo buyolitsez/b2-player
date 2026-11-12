@@ -10,6 +10,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 python3 "$here/make_catalog.py" --out "$OUT" "$@"
 rclone copy "$OUT/covers" "$REMOTE/covers" --fast-list --transfers 16
+rclone copy "$OUT/lyrics" "$REMOTE/lyrics" --fast-list --transfers 16
 rclone copyto "$OUT/catalog.json.gz" "$REMOTE/catalog.json.gz"
 
 # Every catalog path must exist in the bucket (catches name-encoding mismatches).

@@ -89,6 +89,32 @@ def read_tags(path):
     }
 
 
+GENIUS_HEADER = re.compile(r"^\d+ Contributors?\n.*?Lyrics\n+", re.S)
+
+
+def lyrics_of(path):
+    """Lyrics from USLT / LYRICS / \xa9lyr tags or a sidecar .lrc file, or None."""
+    lrc = os.path.splitext(path)[0] + ".lrc"
+    if os.path.exists(lrc):
+        return read_text(lrc).strip() or None
+    try:
+        f = mutagen.File(path)
+    except Exception:
+        return None
+    tags = f.tags if f is not None else None
+    if not tags:
+        return None
+    for k in list(tags.keys()):
+        if k.startswith("USLT") or k.lower() in ("lyrics", "unsyncedlyrics") or k == "\xa9lyr":
+            v = tags[k]
+            v = v.text if hasattr(v, "text") else (v[0] if isinstance(v, list) and v else v)
+            text = fix_mojibake(str(v)).replace("\r\n", "\n").replace("\r", "\n").strip()
+            text = GENIUS_HEADER.sub("", text, count=1).strip()
+            if len(text) >= 20:
+                return text
+    return None
+
+
 def embedded_picture(path):
     try:
         f = mutagen.File(path)
@@ -277,6 +303,7 @@ def main():
             if t is None:
                 continue
             st = os.stat(p)
+            lyr = None if f in cue_tracks else lyrics_of(p)
             liked = (f, st.st_size) in fav_ns
             if not liked and t["artist"] and t["title"]:
                 k = (t["artist"].lower(), t["title"].lower())
@@ -297,7 +324,7 @@ def main():
                     })
             else:
                 entries.append({**t, "path": rel, "title": t["title"] or os.path.splitext(f)[0], "liked": liked,
-                                "size": st.st_size, "mtime": int(st.st_mtime)})
+                                "size": st.st_size, "mtime": int(st.st_mtime), "lyrics": lyr})
 
             for e in entries:
                 key = group_dir + "\0" + (e["album"] or "")
@@ -307,6 +334,8 @@ def main():
                                         "cover_dirs": cover_dirs, "tracks": []}
                 al["tracks"].append(e)
 
+    lyrics_dir = os.path.join(a.out, "lyrics")
+    os.makedirs(lyrics_dir, exist_ok=True)
     covers_dir = os.path.join(a.out, "covers")
     os.makedirs(covers_dir, exist_ok=True)
     out_albums = []
@@ -333,6 +362,7 @@ def main():
                     print(f"warn: cover for {al['dir']}: {e}", file=sys.stderr)
 
         tracks = []
+        lyrics = {}
         for x in tr:
             o = {"path": x["path"], "title": x["title"], "duration": x["duration"], "size": x["size"]}
             if x["artist"] and x["artist"] != artist:
@@ -342,7 +372,16 @@ def main():
                     o[k] = x[k]
             if x["liked"]:
                 o["liked"] = True
+            if x.get("lyrics"):
+                o["ly"] = True
+                lyrics[x["path"]] = x["lyrics"]
             tracks.append(o)
+        lyr_file = os.path.join(lyrics_dir, aid + ".json")
+        if lyrics:
+            with open(lyr_file, "w", encoding="utf-8") as fh:
+                json.dump(lyrics, fh, ensure_ascii=False)
+        elif os.path.exists(lyr_file):
+            os.remove(lyr_file)
         out_albums.append({"id": aid, "dir": al["dir"], "title": title, "artist": artist or "Unknown",
                            "year": common(x["year"] for x in tr), "cover": cover,
                            "added": max(x["mtime"] for x in tr), "tracks": tracks})
@@ -369,7 +408,8 @@ def main():
 
     n_tracks = sum(len(x["tracks"]) for x in out_albums)
     n_liked = sum(1 for x in out_albums for t in x["tracks"] if t.get("liked"))
-    print(f"albums={len(out_albums)} tracks={n_tracks} liked={n_liked} "
+    n_lyrics = sum(1 for x in out_albums for t in x["tracks"] if t.get("ly"))
+    print(f"albums={len(out_albums)} tracks={n_tracks} liked={n_liked} lyrics={n_lyrics} "
           f"no_cover={sum(1 for x in out_albums if not x['cover'])} bad_names={len(bad_names)} "
           f"unmatched_favourites={len(unmatched) if not a.only else 'n/a'}")
     for b in bad_names[:20]:
