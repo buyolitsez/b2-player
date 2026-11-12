@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
             val bytes = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
             catalog = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
             withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+            syncLikes()
             null
         } catch (e: Exception) {
             "Каталог не загрузился: ${e.message}"
@@ -142,7 +143,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun liked(t: Track): Boolean { libVersion; return app.library.isLiked(t) }
-    private fun toggleLike(t: Track) { app.library.setLiked(t, !app.library.isLiked(t)); libVersion++ }
+    private fun toggleLike(t: Track) {
+        app.library.setLiked(t, !app.library.isLiked(t)); libVersion++
+        syncLikes()
+    }
+
+    private fun syncLikes() = lifecycleScope.launch {
+        val err = withContext(Dispatchers.IO) { runCatching { app.library.syncLikes(app.b2) }.exceptionOrNull() }
+        if (err != null) status = "Лайки не синхронизировались: ${err.message}" else libVersion++
+    }
 
     // ---------------- UI ----------------
 

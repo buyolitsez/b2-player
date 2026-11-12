@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.zip.GZIPInputStream
@@ -59,7 +60,7 @@ class Catalog(val albums: List<Album>) {
     }
 }
 
-/** Likes and offline files live on the phone: the B2 key is read-only. */
+/** Likes (synced to state/likes.json in the bucket) and offline files. */
 class Library(private val context: Context) {
     private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
     val offlineDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "offline")
@@ -73,7 +74,27 @@ class Library(private val context: Context) {
         val plus = set("liked+").toMutableSet(); val minus = set("liked-").toMutableSet()
         if (liked) { minus.remove(t.id); if (!t.likedInCatalog) plus.add(t.id) }
         else { plus.remove(t.id); if (t.likedInCatalog) minus.add(t.id) }
-        prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus).apply()
+        prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus).putBoolean("likesDirty", true).apply()
+    }
+
+    /**
+     * Local changes not yet uploaded win; otherwise the bucket copy wins. Likes are stored as
+     * differences from the catalog's "liked" flags, so catalog rebuilds keep them.
+     */
+    @Synchronized
+    fun syncLikes(b2: B2) {
+        // Installs from before syncing have local likes but no flag: upload them first.
+        if (prefs.getBoolean("likesDirty", set("liked+").isNotEmpty() || set("liked-").isNotEmpty())) {
+            val j = JSONObject().put("version", 1)
+                .put("added", JSONArray(set("liked+").sorted())).put("removed", JSONArray(set("liked-").sorted()))
+            b2.upload(LIKES, j.toString(1).toByteArray(), "application/json")
+            prefs.edit().putBoolean("likesDirty", false).apply()
+        } else {
+            val bytes = b2.fetchOrNull(LIKES) ?: return
+            val j = JSONObject(bytes.decodeToString())
+            fun arr(k: String) = j.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+            prefs.edit().putStringSet("liked+", arr("added")).putStringSet("liked-", arr("removed")).apply()
+        }
     }
 
     fun offlineFile(path: String) = File(offlineDir, path)
@@ -101,5 +122,8 @@ class Library(private val context: Context) {
         return b.build()
     }
 
-    companion object { const val MUSIC = "music/" }
+    companion object {
+        const val MUSIC = "music/"
+        const val LIKES = "state/likes.json"
+    }
 }
