@@ -143,7 +143,7 @@ class App : Application() {
         library = Library(this, cache)
         // b2://bucket/<key> -> authorized HTTPS request. The cache key is the b2:// URI, so it
         // stays stable although the auth token changes.
-        val upstream = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory()) { spec ->
+        val upstream = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setTransferListener(NetTimings)) { spec ->
             if (spec.uri.scheme != "b2") return@Factory spec
             val (url, token) = b2.request(spec.uri.path!!.removePrefix("/"))
             spec.buildUpon().setUri(url).setHttpRequestHeaders(mapOf("Authorization" to token)).build()
@@ -177,4 +177,28 @@ private class RoutingDataSource(private val local: DataSource, private val remot
     override fun getUri() = current?.uri
     override fun getResponseHeaders() = current?.responseHeaders ?: emptyMap()
     override fun close() { current?.close(); current = null }
+}
+
+/** Detailed logs only: how long each B2 request takes to answer and how much it reads. */
+@UnstableApi
+private object NetTimings : androidx.media3.datasource.TransferListener {
+    private val started = java.util.concurrent.ConcurrentHashMap<androidx.media3.datasource.DataSource, Long>()
+    private val opened = java.util.concurrent.ConcurrentHashMap<androidx.media3.datasource.DataSource, Long>()
+    private val bytes = java.util.concurrent.ConcurrentHashMap<androidx.media3.datasource.DataSource, Long>()
+    override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, spec: DataSpec, isNetwork: Boolean) {
+        started[source] = System.nanoTime()
+    }
+    override fun onTransferStart(source: androidx.media3.datasource.DataSource, spec: DataSpec, isNetwork: Boolean) {
+        val t = System.nanoTime(); opened[source] = t; bytes[source] = 0
+        val ms = (t - (started[source] ?: t)) / 1_000_000
+        AppLog.d("net", "Open ${spec.uri.lastPathSegment} @${spec.position}+${if (spec.length < 0) "end" else spec.length}: $ms ms")
+    }
+    override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, spec: DataSpec, isNetwork: Boolean, n: Int) {
+        bytes.merge(source, n.toLong(), Long::plus)
+    }
+    override fun onTransferEnd(source: androidx.media3.datasource.DataSource, spec: DataSpec, isNetwork: Boolean) {
+        val ms = (System.nanoTime() - (opened.remove(source) ?: return)) / 1_000_000
+        AppLog.d("net", "Closed ${spec.uri.lastPathSegment}: ${(bytes.remove(source) ?: 0) / 1024} KB in $ms ms")
+        started.remove(source)
+    }
 }

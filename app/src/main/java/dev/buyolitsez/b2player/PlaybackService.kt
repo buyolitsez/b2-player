@@ -44,6 +44,7 @@ class PlaybackService : MediaSessionService() {
     private var listenJob: Job? = null
     private var bufferingSince = 0L
     private var retriedAuth = false
+    private var switchedAt = 0L   // track change not yet audible, for the "Sound after" log line
 
     override fun onCreate() {
         super.onCreate()
@@ -74,6 +75,7 @@ class PlaybackService : MediaSessionService() {
                 }
                 AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
+                switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
             }
@@ -81,6 +83,7 @@ class PlaybackService : MediaSessionService() {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
                 // Only once the current track plays, so preloading never competes with its start.
                 if (isPlaying) prefetch(player)
+                if (isPlaying && switchedAt > 0) { AppLog.d("player", "Sound after ${System.currentTimeMillis() - switchedAt} ms"); switchedAt = 0 }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 AppLog.e("player", "${error.errorCodeName} on ${player.currentMediaItem?.mediaId}", error)
