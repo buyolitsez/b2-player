@@ -126,7 +126,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
 
         // ---------- lyrics and controls ----------
         SettingsHeader("Lyrics and controls")
-        SettingSwitch("Online lyrics", "Look up synced lyrics on lrclib.net (sends artist and title)", p.onlineLyrics)
+        SettingSwitch("Online lyrics", "When the file has no synced lyrics, look them up on lrclib.net (sends artist and title)", p.onlineLyrics)
         SettingAction("Clear lyrics cache", "Look the lyrics up again") { app.lyrics.clearCache(); ui.toast("Lyrics cache cleared") }
         SettingSwitch("Headset button gestures", "Press twice: next track; three times: previous", p.headsetGestures)
         SettingAction("Equalizer", if (app.audioFx.enabled) "On" else "Off") { ui.open(Screen.EqualizerView) }
