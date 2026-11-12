@@ -139,6 +139,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         toast(if (tracks.size == 1) "В конец очереди: ${tracks[0].title}" else "В конец очереди: ${tracks.size} тр.")
     }
 
+    private var lastSwipe = 0L
+    fun swipeAllowed(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastSwipe < 700) return false
+        lastSwipe = now; return true
+    }
+
     fun moveInQueue(from: Int, to: Int) {
         queueIds = queueIds.toMutableList().apply { add(to, removeAt(from)) }
         controller?.moveMediaItem(from, to)

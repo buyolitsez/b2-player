@@ -72,6 +72,8 @@ fun TrackRow(
 ) {
     val active = if (queueIndex != null) queueIndex == ui.currentIndex else t.id == ui.currentId
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        // The box can report one swipe more than once; act only on the first report.
+        if (v != SwipeToDismissBoxValue.Settled && !ui.swipeAllowed()) return@rememberSwipeToDismissBoxState false
         when (v) {
             SwipeToDismissBoxValue.StartToEnd -> if (queueIndex != null) ui.moveInQueue(queueIndex, (ui.currentIndex + if (queueIndex > ui.currentIndex) 1 else 0).coerceAtMost(ui.queueIds.size - 1)) else ui.playNext(listOf(t))
             SwipeToDismissBoxValue.EndToStart -> if (queueIndex != null) ui.removeFromQueue(queueIndex) else ui.addToEnd(listOf(t))

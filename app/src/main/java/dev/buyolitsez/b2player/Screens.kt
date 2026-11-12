@@ -2,6 +2,8 @@ package dev.buyolitsez.b2player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -123,12 +125,14 @@ fun SearchTab(ui: Ui, cat: Catalog) {
 @Composable
 fun PlayButtons(ui: Ui, key: String, title: String, tracks: List<Track>) {
     val allDownloaded = remember(tracks, ui.version) { tracks.isNotEmpty() && tracks.all { ui.library.isDownloaded(it) } }
-    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
         Pill("Слушать", Icons.Default.PlayArrow, active = true) { ui.play(tracks, 0) }
         Pill("Перемешать", Icons.Default.Shuffle) { ui.play(tracks, 0, shuffled = true) }
         if (allDownloaded) Pill("Скачано", Icons.Default.DownloadDone) { ui.deleteDownloads(tracks) }
         else Pill("Скачать", Icons.Default.Download) { ui.download(key, title, tracks) }
-        Spacer(Modifier.weight(1f))
         Text("${tracks.size} тр.", style = MaterialTheme.typography.bodySmall, color = Muted)
     }
 }
