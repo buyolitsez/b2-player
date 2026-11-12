@@ -105,9 +105,9 @@ fun TrackRow(
         }
     }
     if (!ui.prefs.swipeActions.value) { row(); return }
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
-        // The box can report one swipe more than once; act only on the first report.
-        if (v == SwipeToDismissBoxValue.Settled || !ui.swipeAllowed()) return@rememberSwipeToDismissBoxState false
+    // The state is remembered with the lambda it was created with, so the action goes through
+    // rememberUpdatedState: otherwise it uses the track and queue index of the row's first composition.
+    val onSwipe by rememberUpdatedState { v: SwipeToDismissBoxValue ->
         when {
             v == SwipeToDismissBoxValue.StartToEnd && queueIndex != null ->
                 ui.moveInQueue(queueIndex, (ui.currentIndex + if (queueIndex > ui.currentIndex) 1 else 0).coerceAtMost(ui.queueIds.size - 1))
@@ -116,6 +116,10 @@ fun TrackRow(
             onSwipeLeft != null -> onSwipeLeft()
             else -> ui.addToEnd(listOf(t))
         }
+    }
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        // The box can report one swipe more than once; act only on the first report.
+        if (v != SwipeToDismissBoxValue.Settled && ui.swipeAllowed()) onSwipe(v)
         false
     })
     SwipeToDismissBox(state, backgroundContent = {

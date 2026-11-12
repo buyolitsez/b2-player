@@ -124,6 +124,23 @@ class PlaybackService : MediaSessionService() {
                 if (enabled) shuffleFromCurrent(player)
                 super.setShuffleModeEnabled(enabled)
             }
+            // With shuffle on, ExoPlayer puts added or moved tracks at random places in the play order.
+            // "Play next" must play them next, and "Add to queue" must play them last.
+            override fun addMediaItems(index: Int, items: MutableList<MediaItem>) {
+                val next = index == player.currentMediaItemIndex + 1
+                val last = index >= player.mediaItemCount
+                super.addMediaItems(index, items)
+                if (next || last) placeInShuffle(player, index, items.size, next)
+            }
+            override fun addMediaItems(items: MutableList<MediaItem>) {
+                val at = player.mediaItemCount
+                super.addMediaItems(items)
+                placeInShuffle(player, at, items.size, next = false)
+            }
+            override fun moveMediaItem(currentIndex: Int, newIndex: Int) {
+                super.moveMediaItem(currentIndex, newIndex)
+                if (newIndex == player.currentMediaItemIndex + 1) placeInShuffle(player, newIndex, 1, next = true)
+            }
         }
         session = MediaSession.Builder(this, sessionPlayer)
             .setSessionActivity(open)
@@ -233,6 +250,21 @@ class PlaybackService : MediaSessionService() {
         val first = player.currentMediaItemIndex.coerceIn(0, n - 1)
         val order = intArrayOf(first) + (0 until n).filter { it != first }.shuffled().toIntArray()
         player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order, System.nanoTime()))
+    }
+
+    /** With shuffle on: puts queue items [from, from + count) right after the current track in the play order, or last. */
+    private fun placeInShuffle(player: ExoPlayer, from: Int, count: Int, next: Boolean) {
+        if (!player.shuffleModeEnabled || count == 0) return
+        val tl = player.currentTimeline
+        val order = generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
+            tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true).takeIf { i -> i != C.INDEX_UNSET }
+        }.toList()
+        if (order.size != player.mediaItemCount) return
+        val added = (from until from + count).toList()
+        val rest = order.filter { it !in added }
+        val at = if (next) rest.indexOf(player.currentMediaItemIndex) + 1 else rest.size
+        val newOrder = rest.take(at) + added + rest.drop(at)
+        player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(newOrder.toIntArray(), System.nanoTime()))
     }
 
     /** Debounced: remembers the queue and position so it survives app restarts. */
