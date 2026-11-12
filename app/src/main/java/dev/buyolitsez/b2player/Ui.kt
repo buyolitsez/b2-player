@@ -34,7 +34,6 @@ sealed interface Screen {
     data object LikedView : Screen
     data object HistoryView : Screen
     data object Downloads : Screen
-    data object LyricsView : Screen
     data object EqualizerView : Screen
     data object Settings : Screen
 }

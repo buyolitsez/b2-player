@@ -1,6 +1,8 @@
 package dev.buyolitsez.b2player
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,19 +25,17 @@ import kotlinx.coroutines.withContext
 
 // ---------------- lyrics ----------------
 
+// Shown in place of the cover on Now Playing. A tap anywhere calls [toggle], back to the cover.
 @UnstableApi
 @Composable
-fun LyricsScreen(ui: Ui, cat: Catalog) {
-    val t = ui.currentId?.let { cat.byId[it] }
-    if (t == null) { Placeholder("Nothing is playing"); return }
+fun LyricsPanel(ui: Ui, t: Track, modifier: Modifier, toggle: () -> Unit) {
     val lyrics by produceState<Lyrics?>(null, t.id) { value = withContext(Dispatchers.IO) { ui.app.lyrics.get(t) } }
     val l = lyrics
-    Column(Modifier.fillMaxSize()) {
-        Text("${t.title} — ${t.artist}", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1)
+    Box(modifier) {
         when {
             l == null -> Placeholder("Looking for lyrics…")
             l.empty -> Placeholder(if (ui.prefs.onlineLyrics.value) "No lyrics found" else "No lyrics in the file. Online lyrics are off in settings")
-            l.synced != null -> SyncedLyrics(ui, l.synced, l.source)
+            l.synced != null -> SyncedLyrics(ui, l.synced, l.source, toggle)
             else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text(l.plain!!, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 26.sp))
                 Text("Source: ${l.source}", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
@@ -44,9 +44,10 @@ fun LyricsScreen(ui: Ui, cat: Catalog) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @UnstableApi
 @Composable
-private fun SyncedLyrics(ui: Ui, lines: List<LyricLine>, source: String) {
+private fun SyncedLyrics(ui: Ui, lines: List<LyricLine>, source: String, toggle: () -> Unit) {
     val c = ui.controller ?: return
     var pos by remember { mutableLongStateOf(0L) }
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(200) } }
@@ -57,13 +58,13 @@ private fun SyncedLyrics(ui: Ui, lines: List<LyricLine>, source: String) {
         itemsIndexed(lines) { i, line ->
             Text(
                 line.text.ifBlank { "♪" },
-                Modifier.fillMaxWidth().clickable { c.seekTo(line.ms) }.padding(vertical = 6.dp),
+                Modifier.fillMaxWidth().combinedClickable(onLongClick = { c.seekTo(line.ms) }, onClick = toggle).padding(vertical = 6.dp),
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp, lineHeight = 26.sp),
                 fontWeight = if (i == current) FontWeight.Medium else FontWeight.Normal,
                 color = if (i == current) MaterialTheme.colorScheme.primary else if (i < current) Muted else Color(0xFFDDDDDD),
             )
         }
-        item { Text("Source: $source · tap a line to jump", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = Muted) }
+        item { Text("Source: $source · hold a line to jump", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = Muted) }
     }
 }
 
