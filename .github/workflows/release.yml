@@ -27,14 +27,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # Release is signed with the debug key (app/build.gradle.kts), so CI needs the same
-      # ~/.android/debug.keystore as the Mac, otherwise the phone refuses to update over it.
+      # debug.keystore as the Mac, otherwise the phone refuses to update over it. A key in ~/.android
+      # was ignored (every build had a freshly generated one), so the path is passed explicitly.
       - name: Restore signing key
         env:
           DEBUG_KEYSTORE: ${{ secrets.DEBUG_KEYSTORE }}
         run: |
           if [ -z "$DEBUG_KEYSTORE" ]; then echo "::error::Secret DEBUG_KEYSTORE is not set"; exit 1; fi
-          mkdir -p ~/.android
-          echo "$DEBUG_KEYSTORE" | base64 -d > ~/.android/debug.keystore
+          echo "$DEBUG_KEYSTORE" | base64 -d > "$RUNNER_TEMP/debug.keystore"
+          echo "DEBUG_KEYSTORE_FILE=$RUNNER_TEMP/debug.keystore" >> "$GITHUB_ENV"
+          keytool -list -v -keystore "$RUNNER_TEMP/debug.keystore" -storepass android | grep SHA256
 
       - name: Build
         run: ./gradlew assembleRelease

@@ -15,6 +15,8 @@ android {
         versionName = "0.4"
         ndk { abiFilters += "arm64-v8a" }
     }
+    // CI signs with the Mac's debug key from a file named by DEBUG_KEYSTORE_FILE, so the phone accepts updates.
+    signingConfigs { getByName("debug") { System.getenv("DEBUG_KEYSTORE_FILE")?.let { storeFile = file(it) } } }
     buildTypes {
         release {
             isMinifyEnabled = false
