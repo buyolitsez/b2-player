@@ -62,18 +62,22 @@ class Covers(private val app: App) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val decode = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+    // Rows in lists show covers at ~44 dp: a quarter-size copy (128 px) decodes faster and many more of them fit in memory.
+    private val decodeSmall = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = 4 }
 
     /** Drops the decoded thumbnails, e.g. when the app goes to the background. */
     fun trim() = mem.evictAll()
     private val dir = File(app.cacheDir, "covers")
 
-    fun cached(key: String): Bitmap? = mem.get(key)
+    private fun memKey(key: String, small: Boolean) = if (small) "small:$key" else key
 
-    suspend fun load(key: String): Bitmap? = mem.get(key) ?: withContext(Dispatchers.IO) {
+    fun cached(key: String, small: Boolean = false): Bitmap? = mem.get(memKey(key, small))
+
+    suspend fun load(key: String, small: Boolean = false): Bitmap? = cached(key, small) ?: withContext(Dispatchers.IO) {
         val f = File(dir, key.substringAfterLast('/'))
         try {
             if (!f.exists()) app.b2.download(key, f)
-            BitmapFactory.decodeFile(f.path, decode)?.also { mem.put(key, it) }
+            BitmapFactory.decodeFile(f.path, if (small) decodeSmall else decode)?.also { mem.put(memKey(key, small), it) }
         } catch (e: Exception) { null }
     }
 }

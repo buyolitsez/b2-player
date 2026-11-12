@@ -38,7 +38,8 @@ import androidx.media3.common.util.UnstableApi
 @Composable
 fun Cover(ui: Ui, key: String?, size: Dp?, modifier: Modifier = Modifier) {
     // produceState keeps the old value when the key changes, so always reset it to the new cover.
-    val bmp by produceState(key?.let { ui.covers.cached(it) }, key) { value = key?.let { ui.covers.cached(it) ?: ui.covers.load(it) } }
+    val small = size != null && size <= 64.dp
+    val bmp by produceState(key?.let { ui.covers.cached(it, small) }, key) { value = key?.let { ui.covers.load(it, small) } }
     val m = (if (size != null) modifier.size(size) else modifier.aspectRatio(1f)).clip(RoundedCornerShape(3.dp)).background(Gray2)
     Box(m, Alignment.Center) {
         val b = bmp
@@ -216,7 +217,8 @@ fun AddToPlaylistDialog(ui: Ui) {
 
 @UnstableApi
 @Composable
-fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null) {
+/** [showArtist] false shows the year under each album instead, for a screen of one artist. */
+fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null, showArtist: Boolean = true) {
     val cols = ui.prefs.gridColumns.value
     if (ui.prefs.albumGrid.value) {
         LazyVerticalGrid(
@@ -228,14 +230,14 @@ fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = n
                 Column(Modifier.clickable { ui.open(Screen.AlbumView(a)) }) {
                     Cover(ui, a.cover, null, Modifier.fillMaxWidth())
                     Text(a.title, Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                    Text(a.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text(if (showArtist) a.artist else a.year?.toString() ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
         }
     } else {
         LazyColumn {
             if (header != null) item { header() }
-            items(albums, key = { it.id }) { AlbumRow(ui, it) }
+            items(albums, key = { it.id }) { AlbumRow(ui, it, if (showArtist) null else it.year?.toString() ?: "") }
         }
     }
 }

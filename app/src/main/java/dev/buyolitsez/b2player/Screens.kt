@@ -82,7 +82,7 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
     Column {
         FilterField(q) { q = it }
-        AlbumGrid(ui, shown, header = { PlayButtons(ui, "artist:$name", name, tracks) })
+        AlbumGrid(ui, shown, header = { PlayButtons(ui, "artist:$name", name, tracks) }, showArtist = false)
     }
 }
 

@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
@@ -109,8 +110,10 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     // Back first closes the keyboard, then goes back.
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
-    BackHandler(imeVisible || stack.size > 1 || (ui.tab == Tab.Search && ui.query.isNotEmpty())) {
-        if (imeVisible) focusManager.clearFocus() else ui.back()
+    // On the start tab's root the app goes to the background instead of closing, so the open screens and the assistant chat stay.
+    val activity = LocalActivity.current
+    BackHandler {
+        if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover

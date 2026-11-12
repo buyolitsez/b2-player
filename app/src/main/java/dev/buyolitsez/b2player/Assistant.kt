@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
@@ -21,7 +22,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -165,8 +176,8 @@ class Assistant(private val ui: Ui) {
 
         private val SYSTEM = """
             You are the assistant inside B2 Player, the user's personal music player on Android. The library is the user's own
-            collection; you control the player with the tools. Reply in the user's language (usually Russian), briefly, in plain
-            text without Markdown: the chat is small.
+            collection; you control the player with the tools. Reply in the user's language (usually Russian), briefly: the chat
+            is small. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links.
 
             - Act, don't ask: "включи альбом Янки" means find a Янка Дягилева album and play it. Ask only when the request is
               truly ambiguous and a wrong guess would be annoying.
@@ -231,9 +242,12 @@ fun AssistantScreen(ui: Ui) {
 private fun ChatBubble(e: ChatEntry) {
     when (e) {
         is ChatEntry.User -> Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) {
-            Text(e.text, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray2).padding(10.dp, 6.dp))
+            SelectionContainer { Text(e.text, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray2).padding(10.dp, 6.dp)) }
         }
-        is ChatEntry.Reply -> Text(e.text, color = if (e.error) MaterialTheme.colorScheme.error else Color.Unspecified)
+        is ChatEntry.Reply -> SelectionContainer {
+            if (e.error) Text(e.text, color = MaterialTheme.colorScheme.error)
+            else Text(remember(e.text) { markdown(e.text) })
+        }
         is ChatEntry.Confirm -> Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Gray1).padding(10.dp)) {
             Text(e.change.title, fontWeight = FontWeight.Bold)
             e.change.tracks.take(12).forEach { Text("${it.artist} — ${it.title}", style = MaterialTheme.typography.bodySmall, color = Muted) }
@@ -248,5 +262,33 @@ private fun ChatBubble(e: ChatEntry) {
                 false -> Text("Cancelled", color = Muted)
             }
         }
+    }
+}
+
+private val inlineMarkdown = Regex("""\*\*(.+?)\*\*|\*(\S(?:.*?\S)?)\*|`([^`]+)`|\[([^\]]+)]\(([^)\s]+)\)""")
+private val bullet = Regex("""^(\s*)[-*+]\s+""")
+private val heading = Regex("""^#{1,6}\s+""")
+
+/** The Markdown a chat reply needs: headings, bullets, **bold**, *italic*, `code` and [links](url). */
+private fun markdown(text: String): AnnotatedString = buildAnnotatedString {
+    text.lines().forEachIndexed { i, raw ->
+        if (i > 0) append('\n')
+        val h = heading.find(raw)
+        val line = if (h != null) raw.substring(h.range.last + 1) else raw.replaceFirst(bullet, "$1• ")
+        val start = length
+        var pos = 0
+        for (m in inlineMarkdown.findAll(line)) {
+            append(line, pos, m.range.first)
+            val (bold, italic, code, label, url) = m.destructured
+            when {
+                bold.isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(bold) }
+                italic.isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(italic) }
+                code.isNotEmpty() -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Gray2)) { append(code) }
+                else -> withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)))) { append(label) }
+            }
+            pos = m.range.last + 1
+        }
+        append(line, pos, line.length)
+        if (h != null) addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, length)
     }
 }
