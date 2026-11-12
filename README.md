@@ -57,12 +57,16 @@ ALAC и прочее, что не умеет платформа, декодир�
 - Логи: `files/logs/app.log` в приложении, ротация по 512 КБ, всего не больше ~1,5 МБ. После ошибок
   копируются в бакет в `logs/<дата>.log` (хранится одна версия на день). Посмотреть:
   `rclone cat b2music:buyolitsez-music/logs/<дата>.log` на арче или
-  `adb shell run-as dev.buyolitsez.b2player cat files/logs/app.log`.
+  `adb logcat -s 'B2P/*'` (те же строки пишутся в logcat; `run-as` работает только с debug-сборкой).
 
 Сборка и установка (JDK 21, Android SDK):
 
 ```bash
-./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+Ставить release-сборку: debug-сборка в несколько раз медленнее (каталог читается ≈1 с вместо
+≈0,16 с, запуск ≈470 мс вместо ≈200 мс). Обе подписаны debug-ключом, поэтому переход между ними
+сохраняет данные.
 
 При первом запуске ввести в настройках keyID и applicationKey ключа для бакета (Read and Write, чтобы синхронизировались лайки).
