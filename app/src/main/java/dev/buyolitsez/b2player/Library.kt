@@ -97,6 +97,10 @@ class Library(context: Context, private val cache: Cache) {
     private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
     val offlineDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "offline")
     val catalogFile = File(context.filesDir, "catalog.json.gz")
+    /** SHA-1 of the saved catalog as B2 reports it; an unchanged catalog is not downloaded again. */
+    var catalogSha: String?
+        get() = prefs.getString("catalogSha", null)
+        set(v) { prefs.edit().putString("catalogSha", v).apply() }
 
     private fun set(name: String) = prefs.getStringSet(name, emptySet())!!
 

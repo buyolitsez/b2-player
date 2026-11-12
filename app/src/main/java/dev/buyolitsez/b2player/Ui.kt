@@ -324,22 +324,34 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         status = "Updating library…"
         val started = System.currentTimeMillis()
         status = try {
-            val bytes = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
-            app.catalog.value = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
-            withContext(Dispatchers.IO) {
-                library.catalogFile.writeBytes(bytes)
-                library.syncLikes(app.b2)
-                app.playlists.sync(app.b2)
-                app.history.sync(app.b2)
-                runCatching { app.lastFm.flush() }
+            // A HEAD request tells whether the catalog changed; most launches skip the download.
+            val sha = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz", "HEAD").getHeaderField("x-bz-content-sha1") }
+            if (sha != null && sha == library.catalogSha && library.catalogFile.exists()) {
+                app.cachedCatalogLoad.join()
+                AppLog.i("catalog", "Unchanged, checked in ${System.currentTimeMillis() - started} ms")
+            } else {
+                val bytes = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
+                app.catalog.value = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
+                withContext(Dispatchers.IO) { library.catalogFile.writeBytes(bytes); library.catalogSha = sha }
+                AppLog.i("catalog", "Loaded ${app.catalog.value?.albums?.size} albums, ${bytes.size / 1024} KB, ${System.currentTimeMillis() - started} ms")
             }
             version++
-            AppLog.i("catalog", "Loaded ${app.catalog.value?.albums?.size} albums, ${bytes.size / 1024} KB, ${System.currentTimeMillis() - started} ms")
             null
         } catch (e: Exception) {
             AppLog.e("catalog", "Library update failed", e)
             "Couldn't load the library: ${e.message}"
         }
+        if (status != null) return@launch
+        // Likes, playlists and history sync after the library is already usable.
+        val syncStarted = System.currentTimeMillis()
+        syncInBackground {
+            library.syncLikes(app.b2)
+            app.playlists.sync(app.b2)
+            app.history.sync(app.b2)
+            runCatching { app.lastFm.flush() }
+            AppLog.i("sync", "Likes, playlists and history synced in ${System.currentTimeMillis() - syncStarted} ms")
+        }.join()
+        version++
     }
 }
 

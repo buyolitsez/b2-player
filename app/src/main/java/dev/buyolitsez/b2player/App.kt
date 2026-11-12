@@ -95,6 +95,8 @@ class App : Application() {
     lateinit var cachedB2Factory: CacheDataSource.Factory
 
     val catalog = MutableStateFlow<Catalog?>(null)
+    /** Reads the catalog saved by the last launch so the library shows before the network answers. */
+    lateinit var cachedCatalogLoad: kotlinx.coroutines.Job
     /** Pause when the track with this id ends ("stop after this track"). */
     val stopAfterId = MutableStateFlow<String?>(null)
     /** Sleep timer: pause at this time (epoch ms), or when the album changes after the one in [sleepAfterAlbum]. */
@@ -150,10 +152,12 @@ class App : Application() {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val local = DefaultDataSource.Factory(this)
         dataSourceFactory = DataSource.Factory { RoutingDataSource(local.createDataSource(), cachedB2Factory.createDataSource()) }
-        scope.launch(Dispatchers.IO) {
+        cachedCatalogLoad = scope.launch(Dispatchers.IO) {
+            val started = System.currentTimeMillis()
             library.catalogFile.takeIf { it.exists() }?.let { f ->
                 runCatching { Catalog.parse(f.readBytes()) }.getOrNull()?.let { if (catalog.value == null) catalog.value = it }
             }
+            AppLog.i("catalog", "Saved catalog read in ${System.currentTimeMillis() - started} ms")
         }
     }
 }

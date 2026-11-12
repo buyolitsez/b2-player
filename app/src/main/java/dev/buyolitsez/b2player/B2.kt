@@ -22,7 +22,18 @@ class B2(private val context: Context) {
     )
 
     private val prefs = context.getSharedPreferences("b2", Context.MODE_PRIVATE)
-    @Volatile private var auth: Auth? = null
+    // The token is kept across restarts too, so a launch does not wait for b2_authorize_account.
+    @Volatile private var auth: Auth? = prefs.getString("auth", null)?.let { runCatching { JSONObject(it) }.getOrNull() }?.let {
+        Auth(it.getString("apiUrl"), it.getString("downloadUrl"), it.getString("token"), it.getString("accountId"),
+            it.optString("bucketId").takeIf { b -> b.isNotEmpty() }, it.getLong("at"))
+    }
+        set(v) {
+            field = v
+            prefs.edit().putString("auth", v?.let {
+                JSONObject().put("apiUrl", it.apiUrl).put("downloadUrl", it.downloadUrl).put("token", it.token)
+                    .put("accountId", it.accountId).put("bucketId", it.bucketId ?: "").put("at", it.at).toString()
+            }).apply()
+        }
 
     var settings: Settings
         get() = Settings(
@@ -66,18 +77,19 @@ class B2(private val context: Context) {
         return "${a.downloadUrl}/file/${settings.bucket}/${Uri.encode(key, "/")}" to a.token
     }
 
-    fun open(key: String): HttpURLConnection {
+    fun open(key: String, method: String = "GET"): HttpURLConnection {
         repeat(2) { attempt ->
             val (url, token) = request(key)
             val c = URL(url).openConnection() as HttpURLConnection
+            c.requestMethod = method
             c.setRequestProperty("Authorization", token)
             c.connectTimeout = 15000; c.readTimeout = 30000
             when (c.responseCode) {
                 200 -> return c
                 401 -> if (attempt == 0) { invalidate(); return@repeat }
             }
-            AppLog.w("b2", "GET $key: HTTP ${c.responseCode}")
-            throw IOException("GET $key: HTTP ${c.responseCode}")
+            AppLog.w("b2", "$method $key: HTTP ${c.responseCode}")
+            throw IOException("$method $key: HTTP ${c.responseCode}")
         }
         throw IOException("GET $key: unauthorized")
     }
