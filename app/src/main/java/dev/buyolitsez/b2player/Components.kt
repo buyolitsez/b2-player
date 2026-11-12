@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -37,7 +38,8 @@ import androidx.media3.common.util.UnstableApi
 @Composable
 fun Cover(ui: Ui, key: String?, size: Dp?, modifier: Modifier = Modifier) {
     // produceState keeps the old value when the key changes, so always reset it to the new cover.
-    val bmp by produceState(key?.let { ui.covers.cached(it) }, key) { value = key?.let { ui.covers.cached(it) ?: ui.covers.load(it) } }
+    val small = size != null && size <= 64.dp
+    val bmp by produceState(key?.let { ui.covers.cached(it, small) }, key) { value = key?.let { ui.covers.load(it, small) } }
     val m = (if (size != null) modifier.size(size) else modifier.aspectRatio(1f)).clip(RoundedCornerShape(3.dp)).background(Gray2)
     Box(m, Alignment.Center) {
         val b = bmp
@@ -162,7 +164,7 @@ fun TrackMenu(ui: Ui, t: Track, queueIndex: Int? = null, extra: (@Composable Col
     Box {
         SmallIcon(Icons.Default.MoreVert) { open = true }
         DropdownMenu(open, close, containerColor = Gray2) {
-            MenuItem("Play next", Icons.AutoMirrored.Filled.PlaylistAdd, close) { ui.playNext(listOf(t)) }
+            MenuItem("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, close) { ui.playNext(listOf(t)) }
             if (queueIndex == null) MenuItem("Add to queue", Icons.AutoMirrored.Filled.QueueMusic, close) { ui.addToEnd(listOf(t)) }
             else MenuItem("Remove from queue", Icons.Default.RemoveCircleOutline, close) { ui.removeFromQueue(queueIndex) }
             MenuItem(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle, close) { ui.stopAfter(t) }
@@ -171,9 +173,11 @@ fun TrackMenu(ui: Ui, t: Track, queueIndex: Int? = null, extra: (@Composable Col
             if (ui.downloaded(t)) MenuItem("Remove download", Icons.Default.Delete, close) { ui.deleteDownloads(listOf(t)) }
             else MenuItem("Download", Icons.Default.Download, close) { ui.download(t.id, t.title, listOf(t)) }
             extra?.invoke(this, close)
-            MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
-            MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
-            MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
+            // Hide the links to the screen that is already open.
+            val here = ui.stack().last()
+            if (here != Screen.AlbumView(t.album)) MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
+            if (here != Screen.ArtistView(t.album.artist)) MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
+            if (here != Screen.FolderView(t.album.dir)) MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
             MenuItem("Track info", Icons.Default.Info, close) { ui.trackInfo = t }
         }
     }
@@ -213,7 +217,8 @@ fun AddToPlaylistDialog(ui: Ui) {
 
 @UnstableApi
 @Composable
-fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null) {
+/** [showArtist] false shows the year under each album instead, for a screen of one artist. */
+fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null, showArtist: Boolean = true) {
     val cols = ui.prefs.gridColumns.value
     if (ui.prefs.albumGrid.value) {
         LazyVerticalGrid(
@@ -225,14 +230,14 @@ fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = n
                 Column(Modifier.clickable { ui.open(Screen.AlbumView(a)) }) {
                     Cover(ui, a.cover, null, Modifier.fillMaxWidth())
                     Text(a.title, Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                    Text(a.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text(if (showArtist) a.artist else a.year?.toString() ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
         }
     } else {
         LazyColumn {
             if (header != null) item { header() }
-            items(albums, key = { it.id }) { AlbumRow(ui, it) }
+            items(albums, key = { it.id }) { AlbumRow(ui, it, if (showArtist) null else it.year?.toString() ?: "") }
         }
     }
 }

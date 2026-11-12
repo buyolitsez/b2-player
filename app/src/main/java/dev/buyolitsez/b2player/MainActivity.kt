@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
@@ -109,8 +110,10 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     // Back first closes the keyboard, then goes back.
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
-    BackHandler(imeVisible || stack.size > 1 || (ui.tab == Tab.Search && ui.query.isNotEmpty())) {
-        if (imeVisible) focusManager.clearFocus() else ui.back()
+    // On the start tab's root the app goes to the background instead of closing, so the open screens and the assistant chat stay.
+    val activity = LocalActivity.current
+    BackHandler {
+        if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
@@ -150,7 +153,16 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
                         }
                     }
-                    if (screen == Screen.Assistant) IconButton({ ui.assistant.clear() }) { Icon(Icons.Default.DeleteSweep, "New chat") }
+                    if (screen == Screen.Assistant) {
+                        var confirmNew by remember { mutableStateOf(false) }
+                        IconButton({ if (ui.assistant.entries.isEmpty()) ui.assistant.clear() else confirmNew = true }) { Icon(Icons.Default.AddComment, "New chat") }
+                        if (confirmNew) AlertDialog(
+                            { confirmNew = false }, containerColor = Gray2, title = { Text("Start a new chat?") },
+                            text = { Text("This conversation will be cleared.") },
+                            confirmButton = { TextButton({ ui.assistant.clear(); confirmNew = false }) { Text("New chat") } },
+                            dismissButton = { TextButton({ confirmNew = false }) { Text("Cancel") } },
+                        )
+                    }
                     else IconButton({ ui.open(Screen.Assistant) }) { Icon(Icons.Default.AutoAwesome, "Assistant") }
                     var menu by remember { mutableStateOf(false) }
                     Box {
@@ -170,7 +182,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         bottomBar = {
             // Above the keyboard when it is open, so the tabs, mini player and messages stay visible.
             Column(Modifier.background(Color.Black).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
-                if (ui.tab != Tab.Now) MiniPlayer(ui, cat)
+                if (ui.tab != Tab.Now || screen != Screen.Root) MiniPlayer(ui, cat)
                 HorizontalDivider(color = Gray2)
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
                     Tab.entries.forEach { t ->

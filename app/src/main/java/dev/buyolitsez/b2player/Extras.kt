@@ -134,7 +134,7 @@ fun SleepTimerDialog(ui: Ui, dismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton({
+            if (app.sleepAt.value != null || app.sleepAfterAlbum.value != null || app.stopAfterId.value != null) TextButton({
                 app.sleepAt.value = null; app.sleepAfterAlbum.value = null; app.stopAfterId.value = null
                 ui.toast("Sleep timer off"); dismiss()
             }) { Text("Turn off") }

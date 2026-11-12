@@ -48,7 +48,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     val library get() = app.library
     val prefs get() = app.prefs
 
-    var tab by mutableStateOf(runCatching { Tab.valueOf(app.prefs.startTab.value) }.getOrDefault(Tab.Albums))
+    private fun startTab() = runCatching { Tab.valueOf(app.prefs.startTab.value) }.getOrDefault(Tab.Albums)
+    var tab by mutableStateOf(startTab())
     val stacks = mutableStateMapOf<Tab, List<Screen>>()
     var status by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
@@ -97,6 +98,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val st = stack()
         if (st.size > 1) { stacks[tab] = st.dropLast(1); return true }
         if (tab == Tab.Search && query.isNotEmpty()) { query = ""; return true }
+        if (tab != startTab()) { tab = startTab(); return true }
         return false
     }
     fun selectTab(t: Tab) {
