@@ -153,6 +153,7 @@ fun TrackMenu(ui: Ui, t: Track, queueIndex: Int? = null, extra: (@Composable Col
             MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
             MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
             MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
+            MenuItem("Track info", Icons.Default.Info, close) { ui.trackInfo = t }
         }
     }
 }

@@ -56,6 +56,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var colors by mutableStateOf(DefaultColors)
     /** Tracks waiting for the "Add to playlist" dialog. */
     var addToPlaylist by mutableStateOf<List<Track>?>(null)
+    /** Track shown in the "Track info" dialog. */
+    var trackInfo by mutableStateOf<Track?>(null)
 
     var controller by mutableStateOf<MediaController?>(null)
     var currentId by mutableStateOf<String?>(null)

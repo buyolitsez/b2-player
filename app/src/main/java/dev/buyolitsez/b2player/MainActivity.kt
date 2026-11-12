@@ -212,4 +212,5 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         }
     }
     AddToPlaylistDialog(ui)
+    TrackInfoDialog(ui)
 }
