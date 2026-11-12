@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -33,6 +34,9 @@ import com.google.common.util.concurrent.MoreExecutors
 @UnstableApi
 class MainActivity : ComponentActivity() {
     private lateinit var ui: Ui
+    private val importM3u = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) ui.importM3u(uris)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,7 +48,7 @@ class MainActivity : ComponentActivity() {
         ui.refreshCatalog()
         setContent {
             val accent by animateColorAsState(ui.colors.accent, label = "accent")
-            PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = Color.Black) { Root(ui) } }
+            PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = Color.Black) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
         }
     }
 
@@ -69,15 +73,15 @@ class MainActivity : ComponentActivity() {
 }
 
 private val tabIcons: Map<Tab, ImageVector> = mapOf(
-    Tab.Queue to Icons.AutoMirrored.Filled.QueueMusic, Tab.Now to Icons.Default.PlayCircle, Tab.Folders to Icons.Default.Folder,
-    Tab.Albums to Icons.Default.Album, Tab.Artists to Icons.Default.Person, Tab.Liked to Icons.Default.Favorite,
+    Tab.Queue to Icons.Default.List, Tab.Now to Icons.Default.PlayCircle, Tab.Folders to Icons.Default.Folder,
+    Tab.Albums to Icons.Default.Album, Tab.Artists to Icons.Default.Person, Tab.Playlists to Icons.AutoMirrored.Filled.QueueMusic,
     Tab.Search to Icons.Default.Search,
 )
 
 @UnstableApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Root(ui: Ui) {
+fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
     val offline by ui.app.prefs.offlineOnly.collectAsState()
     val stack = ui.stack()
@@ -85,8 +89,8 @@ fun Root(ui: Ui) {
     BackHandler(stack.size > 1 || (ui.tab == Tab.Search && ui.query.isNotEmpty())) { ui.back() }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
-    LaunchedEffect(coverKey) {
-        ui.colors = coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it) } } ?: DefaultColors
+    LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
+        ui.colors = if (!ui.prefs.coverTint.value) DefaultColors else coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it) } } ?: DefaultColors
     }
 
     Scaffold(
@@ -101,8 +105,11 @@ fun Root(ui: Ui) {
                         is Screen.AlbumView -> screen.album.title
                         is Screen.ArtistView -> screen.name
                         is Screen.FolderView -> screen.path.substringAfterLast('/')
-                        Screen.Downloads -> "Загрузки"
-                        Screen.Settings -> "Настройки"
+                        is Screen.PlaylistView -> ui.app.playlists.get(screen.id)?.name ?: "Playlist"
+                        Screen.LikedView -> "Liked"
+                        Screen.HistoryView -> "History"
+                        Screen.Downloads -> "Downloads"
+                        Screen.Settings -> "Settings"
                         Screen.Root -> ui.tab.title
                     }
                     Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
@@ -111,21 +118,21 @@ fun Root(ui: Ui) {
                 actions = {
                     if (offline) Icon(Icons.Default.CloudOff, null, Modifier.padding(end = 4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     if (screen == Screen.Root && ui.tab == Tab.Albums || screen is Screen.ArtistView) {
-                        IconButton({ ui.app.prefs.albumGrid = !ui.app.prefs.albumGrid; ui.version++ }) {
+                        IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
                             ui.version
-                            Icon(if (ui.app.prefs.albumGrid) Icons.Default.ViewList else Icons.Default.GridView, null)
+                            Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
                         }
                     }
                     var menu by remember { mutableStateOf(false) }
                     Box {
                         IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
                         DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
-                            DropdownMenuItem({ Text(if (offline) "Выключить «только офлайн»" else "Только офлайн") },
+                            DropdownMenuItem({ Text(if (offline) "Turn off offline only" else "Offline only") },
                                 { menu = false; ui.app.prefs.setOfflineOnly(!offline); ui.version++ },
                                 leadingIcon = { Icon(Icons.Default.CloudOff, null) })
-                            DropdownMenuItem({ Text("Загрузки") }, { menu = false; ui.open(Screen.Downloads) }, leadingIcon = { Icon(Icons.Default.Download, null) })
-                            DropdownMenuItem({ Text("Обновить каталог") }, { menu = false; ui.refreshCatalog() }, leadingIcon = { Icon(Icons.Default.Sync, null) })
-                            DropdownMenuItem({ Text("Настройки") }, { menu = false; ui.open(Screen.Settings) }, leadingIcon = { Icon(Icons.Default.Settings, null) })
+                            DropdownMenuItem({ Text("Downloads") }, { menu = false; ui.open(Screen.Downloads) }, leadingIcon = { Icon(Icons.Default.Download, null) })
+                            DropdownMenuItem({ Text("Reload library") }, { menu = false; ui.refreshCatalog() }, leadingIcon = { Icon(Icons.Default.Sync, null) })
+                            DropdownMenuItem({ Text("Settings") }, { menu = false; ui.open(Screen.Settings) }, leadingIcon = { Icon(Icons.Default.Settings, null) })
                         }
                     }
                 },
@@ -151,21 +158,25 @@ fun Root(ui: Ui) {
             val c = cat
             when {
                 screen == Screen.Settings -> SettingsScreen(ui, c)
-                c == null -> Placeholder("Каталог ещё не загружен")
+                c == null -> Placeholder("The library isn't loaded yet")
                 screen == Screen.Downloads -> DownloadsScreen(ui, c)
                 screen is Screen.AlbumView -> AlbumScreen(ui, screen.album)
                 screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
                 screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
+                screen is Screen.PlaylistView -> PlaylistScreen(ui, c, screen.id)
+                screen == Screen.LikedView -> LikedScreen(ui, c)
+                screen == Screen.HistoryView -> HistoryScreen(ui, c)
                 else -> when (ui.tab) {
                     Tab.Queue -> QueueTab(ui, c)
                     Tab.Now -> NowPlayingTab(ui, c)
                     Tab.Folders -> FolderScreen(ui, c, "")
                     Tab.Albums -> AlbumsTab(ui, c)
                     Tab.Artists -> ArtistsTab(ui, c)
-                    Tab.Liked -> LikedTab(ui, c)
+                    Tab.Playlists -> PlaylistsTab(ui, c, importM3u)
                     Tab.Search -> SearchTab(ui, c)
                 }
             }
         }
     }
+    AddToPlaylistDialog(ui)
 }

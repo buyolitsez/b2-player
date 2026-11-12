@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -26,7 +27,7 @@ import kotlinx.coroutines.delay
 fun NowPlayingTab(ui: Ui, cat: Catalog) {
     val c = ui.controller
     val t = ui.currentId?.let { cat.byId[it] }
-    if (c == null || t == null) { Placeholder("Ничего не играет"); return }
+    if (c == null || t == null) { Placeholder("Nothing is playing"); return }
     var pos by remember { mutableLongStateOf(0L) }
     var dragging by remember { mutableStateOf<Float?>(null) }
     var info by remember { mutableStateOf(false) }
@@ -34,7 +35,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     val accent = MaterialTheme.colorScheme.primary
     Column(
-        Modifier.fillMaxSize().background(ui.colors.background).padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().background(if (ui.prefs.coverTint.value) ui.colors.background else Color.Black).padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(16.dp))
@@ -67,11 +68,12 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
                     @Composable
                     fun item(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, action: () -> Unit) =
                         DropdownMenuItem({ Text(text) }, { menu = false; action() }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
-                    item(if (ui.app.stopAfterId.value == t.id) "Не останавливаться" else "Остановить после трека", Icons.Default.StopCircle) { ui.stopAfter(t) }
-                    item("К альбому", Icons.Default.Album) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
-                    item("К исполнителю", Icons.Default.Person) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
-                    item("Папка", Icons.Default.Folder) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
-                    item("О файле", Icons.Default.Info) { info = true }
+                    item(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle) { ui.stopAfter(t) }
+                    item("Add to playlist…", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = listOf(t) }
+                    item("Go to album", Icons.Default.Album) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
+                    item("Go to artist", Icons.Default.Person) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
+                    item("Show folder", Icons.Default.Folder) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
+                    item("File info", Icons.Default.Info) { info = true }
                 }
             }
         }
@@ -100,19 +102,19 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Default.KeyboardArrowUp, null, tint = Muted)
-                Text("Далее: ${next.title} — ${next.artist}", color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                Text("Next: ${next.title} — ${next.artist}", color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
     if (info) {
         AlertDialog({ info = false }, confirmButton = { TextButton({ info = false }) { Text("OK") } },
-            title = { Text("О файле") }, containerColor = Gray2,
+            title = { Text("File info") }, containerColor = Gray2,
             text = {
                 Text(
                     listOfNotNull(
                         t.path, "${t.ext.uppercase()} · ${formatSize(t.size)}",
-                        t.start?.let { "CUE: с ${formatTime(it)}" },
-                        if (ui.downloaded(t)) "Скачан на телефон" else if (ui.library.isCached(t)) "В кэше" else "Стримится из B2",
+                        t.start?.let { "CUE track from ${formatTime(it)}" },
+                        if (ui.downloaded(t)) "Downloaded to the phone" else if (ui.library.isCached(t)) "In the stream cache" else "Streamed from B2",
                     ).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
                 )
             })

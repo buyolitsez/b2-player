@@ -18,23 +18,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.io.File
 
-/** User preferences that are not B2 credentials. */
+/** User preferences that are not B2 credentials. Compose-observable, so settings rows update live. */
 class Prefs(context: Context) {
     private val p = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-    var cacheGb: Int
-        get() = p.getInt("cacheGb", 4)
-        set(v) = p.edit().putInt("cacheGb", v).apply()
-    var autoDownloadLiked: Boolean
-        get() = p.getBoolean("autoDownloadLiked", true)
-        set(v) = p.edit().putBoolean("autoDownloadLiked", v).apply()
-    var albumGrid: Boolean
-        get() = p.getBoolean("albumGrid", true)
-        set(v) = p.edit().putBoolean("albumGrid", v).apply()
-    var albumSortRecent: Boolean
-        get() = p.getBoolean("albumSortRecent", false)
-        set(v) = p.edit().putBoolean("albumSortRecent", v).apply()
+
+    inner class Bool(private val key: String, def: Boolean) {
+        var value by mutableStateOf(p.getBoolean(key, def))
+        fun set(v: Boolean) { value = v; p.edit().putBoolean(key, v).apply() }
+    }
+    inner class Num(private val key: String, def: Int) {
+        var value by mutableIntStateOf(p.getInt(key, def))
+        fun set(v: Int) { value = v; p.edit().putInt(key, v).apply() }
+    }
+    inner class Str(private val key: String, def: String) {
+        var value by mutableStateOf(p.getString(key, def)!!)
+        fun set(v: String) { value = v; p.edit().putString(key, v).apply() }
+    }
+
+    // Playback
+    val prefetchCount = Num("prefetchCount", 3)
+    val skipSilence = Bool("skipSilence", false)
+    val restoreQueue = Bool("restoreQueue", true)
+    val undoReplace = Bool("undoReplace", true)
+    // Downloads
+    val autoDownloadLiked = Bool("autoDownloadLiked", true)
+    val autoWifiOnly = Bool("autoWifiOnly", true)
+    val deleteOnUnlike = Bool("deleteOnUnlike", true)
+    val manualWifiOnly = Bool("manualWifiOnly", false)
+    // Library
+    val albumGrid = Bool("albumGrid", true)
+    val albumSortRecent = Bool("albumSortRecent", false)
+    val gridColumns = Num("gridColumns", 3)
+    val startTab = Str("startTab", "Albums")
+    val swipeActions = Bool("swipeActions", true)
+    val coverTint = Bool("coverTint", true)
+    // History
+    val recordHistory = Bool("recordHistory", true)
+    // Storage
+    val cacheGb = Num("cacheGb", 4)
+
     val offlineOnly = MutableStateFlow(p.getBoolean("offlineOnly", false))
     fun setOfflineOnly(v: Boolean) { offlineOnly.value = v; p.edit().putBoolean("offlineOnly", v).apply() }
 }
@@ -44,6 +72,9 @@ class App : Application() {
     lateinit var b2: B2
     lateinit var library: Library
     lateinit var prefs: Prefs
+    lateinit var playlists: Playlists
+    lateinit var history: History
+    lateinit var lastFm: LastFm
     lateinit var cache: SimpleCache
     lateinit var dataSourceFactory: DataSource.Factory
     /** Cache-backed b2:// source, also used to prefetch upcoming tracks. */
@@ -58,8 +89,11 @@ class App : Application() {
         super.onCreate()
         prefs = Prefs(this)
         b2 = B2(this)
+        playlists = Playlists(this)
+        history = History(this)
+        lastFm = LastFm(this)
         cache = SimpleCache(
-            File(cacheDir, "media"), LeastRecentlyUsedCacheEvictor(prefs.cacheGb.toLong() shl 30),
+            File(cacheDir, "media"), LeastRecentlyUsedCacheEvictor(prefs.cacheGb.value.toLong() shl 30),
             StandaloneDatabaseProvider(this),
         )
         library = Library(this, cache)

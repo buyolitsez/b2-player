@@ -36,6 +36,13 @@ class PlaybackService : MediaSessionService() {
     private var saveJob: Job? = null
     private var lastId: String? = null
 
+    // Listening time of the current track, for history and Last.fm.
+    private var listenedMs = 0L
+    private var startedAt = 0L
+    private var counted = false
+    private var lastHistorySync = 0L
+    private var listenJob: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this)
@@ -49,13 +56,19 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        player.skipSilenceEnabled = app.prefs.skipSilence.value
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && lastId != null && lastId == app.stopAfterId.value) {
                     player.pause(); app.stopAfterId.value = null
                 }
                 lastId = item?.mediaId
+                listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
+                if (player.isPlaying) sendNowPlaying(item)
                 prefetch(player)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
             }
             override fun onEvents(p: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
@@ -77,7 +90,38 @@ class PlaybackService : MediaSessionService() {
                 )
             })
             .build()
-        restoreQueue(player)
+        if (app.prefs.restoreQueue.value) restoreQueue(player)
+        listenJob = trackListening(player)
+    }
+
+    private fun track(item: MediaItem?) = item?.mediaId?.let { app.catalog.value?.byId?.get(it) }
+
+    private fun sendNowPlaying(item: MediaItem?) {
+        val t = track(item) ?: return
+        app.scope.launch(Dispatchers.IO) { runCatching { app.lastFm.nowPlaying(t) } }
+    }
+
+    /** Counts a play once half the track or 4 minutes were heard (Last.fm rules; tracks under 30 s don't count). */
+    private fun trackListening(player: ExoPlayer) = app.scope.launch(Dispatchers.Main) {
+        while (true) {
+            delay(1000)
+            if (!player.isPlaying) continue
+            player.skipSilenceEnabled = app.prefs.skipSilence.value
+            listenedMs += 1000
+            val t = track(player.currentMediaItem) ?: continue
+            if (counted || t.duration < 30 || listenedMs < minOf(t.duration * 500, 240_000.0)) continue
+            counted = true
+            val at = startedAt
+            app.scope.launch(Dispatchers.IO) {
+                if (app.prefs.recordHistory.value) app.history.record(t.id, at)
+                app.lastFm.enqueue(t, at)
+                runCatching { app.lastFm.flush() }
+                if (System.currentTimeMillis() - lastHistorySync > 10 * 60_000) {
+                    lastHistorySync = System.currentTimeMillis()
+                    runCatching { app.history.sync(app.b2) }
+                }
+            }
+        }
     }
 
     private fun restoreQueue(player: ExoPlayer) = app.scope.launch {
@@ -111,9 +155,10 @@ class PlaybackService : MediaSessionService() {
         if (tl.isEmpty) return
         val uris = ArrayList<android.net.Uri>()
         var i = player.currentMediaItemIndex
-        repeat(PREFETCH) {
+        for (n in 0 until app.prefs.prefetchCount.value) {
+            if (i == C.INDEX_UNSET) break
             i = tl.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
-            if (i == C.INDEX_UNSET) return@repeat
+            if (i == C.INDEX_UNSET) break
             player.getMediaItemAt(i).localConfiguration?.uri?.takeIf { it.scheme == "b2" }?.let { uris.add(it) }
         }
         val writers = uris.distinct().map { uri -> CacheWriter(app.cachedB2Factory.createDataSource(), DataSpec(uri), null, null) }
@@ -129,6 +174,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        listenJob?.cancel()
         prefetching.forEach { it.cancel() }
         prefetchExecutor.shutdown()
         session?.run { player.release(); release() }
@@ -136,5 +182,4 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    companion object { const val PREFETCH = 3 }
 }

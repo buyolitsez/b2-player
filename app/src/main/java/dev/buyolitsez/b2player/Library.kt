@@ -41,7 +41,7 @@ class Catalog(val albums: List<Album>) {
     val byId = tracks.associateBy { it.id }
     val artists: List<Pair<String, List<Album>>> =
         albums.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }
-    val root = Folder("Папки", "").also { root ->
+    val root = Folder("Folders", "").also { root ->
         for (a in albums) {
             var f = root
             for (part in a.dir.split('/')) {
