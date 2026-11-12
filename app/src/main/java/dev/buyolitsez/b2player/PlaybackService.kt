@@ -43,6 +43,7 @@ class PlaybackService : MediaSessionService() {
     private var lastHistorySync = 0L
     private var listenJob: Job? = null
     private var bufferingSince = 0L
+    private var retriedAuth = false
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +62,8 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { app.audioFx.attach(audioSessionId) }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && lastId != null && lastId == app.stopAfterId.value) {
+                val finished = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                if (finished && lastId != null && lastId == app.stopAfterId.value) {
                     player.pause(); app.stopAfterId.value = null
                     AppLog.i("player", "Stopped after $lastId as asked")
                 }
@@ -81,6 +83,11 @@ class PlaybackService : MediaSessionService() {
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 AppLog.e("player", "${error.errorCodeName} on ${player.currentMediaItem?.mediaId}", error)
+                // The saved B2 token can be revoked before it expires: sign in again and retry once.
+                val http = error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
+                if (http?.responseCode == 401 && !retriedAuth) {
+                    retriedAuth = true; app.b2.invalidate(); player.prepare()
+                }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 val now = System.currentTimeMillis()
@@ -151,6 +158,7 @@ class PlaybackService : MediaSessionService() {
 
     /** Counts a play once half the track or 4 minutes were heard (Last.fm rules; tracks under 30 s don't count). */
     private fun trackListening(player: ExoPlayer) = app.scope.launch(Dispatchers.Main) {
+        var tick = 0
         while (true) {
             delay(1000)
             app.sleepAt.value?.let { at ->
@@ -162,6 +170,9 @@ class PlaybackService : MediaSessionService() {
             }
             if (app.sleepAt.value == null && player.volume < 1f) player.volume = 1f
             if (!player.isPlaying) continue
+            retriedAuth = false
+            // Keep the position fresh, so a killed process resumes close to where it was.
+            if (++tick % 10 == 0) saveQueue(player)
             player.skipSilenceEnabled = app.prefs.skipSilence.value
             listenedMs += 1000
             val t = track(player.currentMediaItem) ?: continue
@@ -209,17 +220,34 @@ class PlaybackService : MediaSessionService() {
         prefetching.forEach { it.cancel() }
         val tl = player.currentTimeline
         if (tl.isEmpty) return
-        val uris = ArrayList<android.net.Uri>()
+        val specs = ArrayList<DataSpec>()
         var i = player.currentMediaItemIndex
         for (n in 0 until app.prefs.prefetchCount.value) {
             if (i == C.INDEX_UNSET) break
             i = tl.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
             if (i == C.INDEX_UNSET) break
-            player.getMediaItemAt(i).localConfiguration?.uri?.takeIf { it.scheme == "b2" }?.let { uris.add(it) }
+            val item = player.getMediaItemAt(i)
+            val uri = item.localConfiguration?.uri?.takeIf { it.scheme == "b2" } ?: continue
+            specs.add(prefetchSpec(uri, track(item)))
         }
-        val writers = uris.distinct().map { uri -> CacheWriter(app.cachedB2Factory.createDataSource(), DataSpec(uri), null, null) }
+        val writers = specs.distinct().map { spec -> CacheWriter(app.cachedB2Factory.createDataSource(), spec, null, null) }
         prefetching = writers
         if (writers.isNotEmpty()) prefetchExecutor.execute { writers.forEach { runCatching { it.cache() } } }
+    }
+
+    /**
+     * The whole file, or for a CUE track only its share of the album image (estimated from the
+     * times, with a margin), so preloading one track does not download a 200 MB album file.
+     */
+    private fun prefetchSpec(uri: android.net.Uri, t: Track?): DataSpec {
+        val start = t?.start ?: return DataSpec(uri)
+        val total = t.album.tracks.filter { it.path == t.path }.maxOf { (it.start ?: 0.0) + it.duration }
+        if (total <= 0 || t.size <= 0) return DataSpec(uri)
+        val margin = 1L shl 20
+        val from = (t.size * (start / total)).toLong() - margin
+        val length = (t.size * (t.duration / total)).toLong() + 2 * margin
+        val pos = from.coerceAtLeast(0)
+        return DataSpec.Builder().setUri(uri).setPosition(pos).setLength(minOf(length, t.size - pos)).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session

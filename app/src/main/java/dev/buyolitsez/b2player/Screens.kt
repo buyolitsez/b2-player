@@ -44,7 +44,7 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     }
     AlbumGrid(ui, albums, header = {
         Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("A–Z", active = !recent.value) { recent.set(false) }
+            Pill("By artist", active = !recent.value) { recent.set(false) }
             Pill("Recently added", active = recent.value) { recent.set(true) }
         }
     })
@@ -63,7 +63,7 @@ fun ArtistsTab(ui: Ui, cat: Catalog) {
 @UnstableApi
 @Composable
 fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
-    val albums = remember(cat, name) { cat.albums.filter { it.artist == name }.sortedBy { it.year ?: 0 } }
+    val albums = remember(cat, name) { cat.albums.filter { it.artist.equals(name, ignoreCase = true) }.sortedBy { it.year ?: 0 } }
     val tracks = remember(albums) { albums.flatMap { it.tracks } }
     AlbumGrid(ui, albums, header = { PlayButtons(ui, "artist:$name", name, tracks) })
 }
@@ -87,14 +87,15 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
 @Composable
 fun SearchTab(ui: Ui, cat: Catalog) {
     val q = ui.query.trim()
+    val fq = remember(q) { searchFold(q) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     val albums = remember(cat, q) {
-        if (q.length < 2) emptyList() else cat.albums.filter { it.title.contains(q, true) || it.artist.contains(q, true) }
+        if (q.length < 2) emptyList() else cat.albums.filter { fq in it.searchKey }
     }
     val tracks = remember(cat, q, ui.version) {
-        if (q.length < 2) emptyList() else cat.tracks.filter { (it.title.contains(q, true) || it.artist.contains(q, true)) && ui.visible(it) }.take(200)
+        if (q.length < 2) emptyList() else cat.tracks.filter { fq in it.searchKey && ui.visible(it) }.take(200)
     }
     Column {
         OutlinedTextField(
@@ -105,6 +106,8 @@ fun SearchTab(ui: Ui, cat: Catalog) {
             keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         )
         LazyColumn {
+            if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(16.dp), color = Muted) }
+            else if (q.length >= 2 && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(16.dp), color = Muted) }
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
             items(albums.take(30), key = { "a" + it.id }) { AlbumRow(ui, it) }
             if (tracks.isNotEmpty()) item { SectionTitle("Tracks") }
@@ -149,7 +152,7 @@ fun AlbumScreen(ui: Ui, a: Album) {
                         modifier = Modifier.clickable { ui.open(Screen.ArtistView(a.artist), Tab.Artists) }.padding(vertical = 2.dp),
                     )
                     Text(
-                        listOfNotNull(a.year?.toString(), "${a.tracks.size} tracks", formatTime(a.duration)).joinToString(" · "),
+                        listOfNotNull(a.year?.toString(), if (tracks.size == a.tracks.size) "${a.tracks.size} tracks" else "${tracks.size} of ${a.tracks.size} tracks offline", formatTime(a.duration)).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = Muted,
                     )
                 }
@@ -180,7 +183,7 @@ fun PlaylistsTab(ui: Ui, cat: Catalog, importM3u: () -> Unit) {
             ListRow(Icons.Default.Favorite, "Liked", "$likedCount tracks") { ui.open(Screen.LikedView) }
             ListRow(Icons.Default.History, "History and stats", "${ui.app.history.all().size} plays") { ui.open(Screen.HistoryView) }
             ListRow(Icons.Default.NewReleases, "Recently added", "Albums, newest first") {
-                ui.prefs.albumSortRecent.set(true); ui.selectTab(Tab.Albums)
+                ui.prefs.albumSortRecent.set(true); ui.stacks[Tab.Albums] = listOf(Screen.Root); ui.tab = Tab.Albums
             }
             if (lists.isNotEmpty()) SectionTitle("Your playlists")
         }
@@ -208,6 +211,7 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
     val p = remember(ui.version, id) { ui.app.playlists.get(id) }
     if (p == null) { Placeholder("Playlist was deleted"); return }
     val tracks = remember(p, cat) { ui.playlistTracks(p, cat) }
+    val keys = remember(tracks) { stableKeys(tracks.map { it.id }) }
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -228,8 +232,8 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
                 })
             }
         }
-        itemsIndexed(tracks, key = { i, t -> "$i:${t.id}" }) { i, t ->
-            ReorderableItem(reorder, key = "$i:${t.id}") {
+        itemsIndexed(tracks, key = { i, _ -> keys[i] }) { i, t ->
+            ReorderableItem(reorder, key = keys[i]) {
                 TrackRow(
                     ui, t, showCover = true, onClick = { ui.play(tracks, i) },
                     dragHandle = { DragHandle(Modifier.draggableHandle()) },
@@ -246,6 +250,15 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
         confirmButton = { TextButton({ confirmDelete = false; ui.back(); ui.deletePlaylist(id) }) { Text("Delete") } },
         dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancel") } },
     )
+}
+
+/**
+ * List keys that stay with an item when it moves (an index in the key breaks dragging after the
+ * first step); repeated ids get "#2", "#3"… so keys stay unique.
+ */
+fun stableKeys(ids: List<String>): List<String> {
+    val seen = HashMap<String, Int>()
+    return ids.map { id -> val n = seen.merge(id, 1, Int::plus)!!; if (n == 1) id else "$id#$n" }
 }
 
 @Composable
@@ -327,11 +340,15 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
 fun QueueTab(ui: Ui, cat: Catalog) {
     val ids = ui.queueIds
     val tracks = ids.map { cat.byId[it] }
+    // Rows follow the play order; with shuffle on that is not the queue order, so dragging is off then.
+    val order = ui.playOrder.takeIf { it.size == ids.size } ?: ids.indices.toList()
+    val keys = stableKeys(ids)
     val listState = rememberLazyListState()
     val reorder = rememberReorderableLazyListState(listState) { from, to -> ui.moveInQueue(from.index - 1, to.index - 1) }
-    LaunchedEffect(Unit) { if (ui.currentIndex > 2) listState.scrollToItem(ui.currentIndex - 1) }
+    val at = order.indexOf(ui.currentIndex).coerceAtLeast(0)
+    LaunchedEffect(Unit) { if (at > 2) listState.scrollToItem(at - 1) }
     val saved = remember(ui.version) { ui.library.savedQueues }
-    val left = tracks.drop(ui.currentIndex).sumOf { it?.duration ?: 0.0 }
+    val left = order.drop(at).sumOf { tracks.getOrNull(it)?.duration ?: 0.0 }
     var showSaved by remember { mutableStateOf(false) }
     LazyColumn(state = listState) {
         item(key = "header") {
@@ -340,7 +357,7 @@ fun QueueTab(ui: Ui, cat: Catalog) {
                     Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (ids.isNotEmpty()) Text("${ui.currentIndex + 1} / ${ids.size} · ${formatTime(left)} left", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    if (ids.isNotEmpty()) Text("${at + 1} / ${ids.size} · ${formatTime(left)} left", style = MaterialTheme.typography.bodySmall, color = Muted)
                     Pill("Put aside", Icons.Default.Bookmark) { ui.putQueueAside() }
                     Pill("Set aside · ${saved.size}", Icons.Default.Bookmarks, active = showSaved) { showSaved = !showSaved }
                     Pill("Save as playlist", Icons.AutoMirrored.Filled.QueueMusic) { ui.saveQueueAsPlaylist() }
@@ -358,11 +375,12 @@ fun QueueTab(ui: Ui, cat: Catalog) {
                 if (ids.isEmpty()) Text("The queue is empty. Play an album or a track.", Modifier.padding(16.dp), color = Muted)
             }
         }
-        itemsIndexed(tracks, key = { i, _ -> "$i:${ids[i]}" }) { i, t ->
-            ReorderableItem(reorder, key = "$i:${ids[i]}") {
+        items(order, key = { keys[it] }) { i ->
+            val t = tracks[i]
+            ReorderableItem(reorder, key = keys[i], enabled = !ui.shuffle) {
                 if (t == null) return@ReorderableItem
                 TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); play() } }, queueIndex = i,
-                    dragHandle = { DragHandle(Modifier.draggableHandle()) })
+                    dragHandle = if (ui.shuffle) null else ({ DragHandle(Modifier.draggableHandle()) }))
             }
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -64,6 +65,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var shuffle by mutableStateOf(false)
     var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
     var nextId by mutableStateOf<String?>(null)
+    /** Queue indices in play order: the shuffle order when shuffle is on. */
+    var playOrder by mutableStateOf(listOf<Int>())
 
     fun sync(p: Player) {
         currentId = p.currentMediaItem?.mediaId
@@ -73,6 +76,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         shuffle = p.shuffleModeEnabled
         repeat = p.repeatMode
         nextId = p.nextMediaItemIndex.takeIf { it >= 0 }?.let { p.getMediaItemAt(it).mediaId }
+        val tl = p.currentTimeline
+        playOrder = if (!p.shuffleModeEnabled || tl.isEmpty) queueIds.indices.toList()
+        else generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
+            tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true).takeIf { i -> i != C.INDEX_UNSET }
+        }.toList().takeIf { it.size == queueIds.size } ?: queueIds.indices.toList()
     }
 
     // ---------- navigation ----------
@@ -107,13 +115,15 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         return SavedQueue("", queueIds, c.currentMediaItemIndex, c.currentPosition)
     }
 
-    private fun restore(q: SavedQueue, play: Boolean) {
+    private fun restore(q: SavedQueue, play: Boolean, shuffle: Boolean? = null) {
         val c = controller ?: return
         val cat = app.catalog.value ?: return
         val items = q.ids.mapNotNull { cat.byId[it] }.map { library.mediaItem(it) }
         if (items.isEmpty()) return
+        if (shuffle != null) c.shuffleModeEnabled = shuffle
         c.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
-        c.prepare(); if (play) c.play()
+        c.playWhenReady = play
+        c.prepare()
     }
 
     /** Replaces the queue; the old one can be brought back from the snackbar. */
@@ -123,7 +133,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         if (list.isEmpty()) { toast("Nothing here is available offline"); return }
         val start = tracks.getOrNull(index)?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val before = snapshot()
-        c.shuffleModeEnabled = shuffled
+        val wasShuffled = c.shuffleModeEnabled
+        // "Shuffle" turns shuffle on; a plain play keeps whatever mode the player is in.
+        if (shuffled) c.shuffleModeEnabled = true
         AppLog.d("ui", "Play ${list.size} tracks from ${list.first().album.dir}, start $start, shuffle $shuffled")
         c.setMediaItems(list.map { library.mediaItem(it) }, if (shuffled) list.indices.random() else start, 0)
         c.prepare(); c.play()
@@ -131,7 +143,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             scope.launch {
                 snackbar.currentSnackbarData?.dismiss()
                 if (snackbar.showSnackbar("Queue replaced", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    restore(before, play = true)
+                    restore(before, play = true, shuffle = wasShuffled)
                 }
             }
         }
@@ -308,6 +320,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun lastFmLogout() { app.lastFm.logout(); version++ }
 
+    companion object { const val UPDATING = "Updating library…" }
+
     // ---------- sync and catalog ----------
 
     private fun syncInBackground(block: () -> Unit) = scope.launch {
@@ -321,7 +335,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun refreshCatalog() = scope.launch {
         if (!app.b2.settings.complete) return@launch
-        status = "Updating library…"
+        status = UPDATING
         val started = System.currentTimeMillis()
         status = try {
             // A HEAD request tells whether the catalog changed; most launches skip the download.

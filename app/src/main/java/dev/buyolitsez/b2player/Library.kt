@@ -20,7 +20,13 @@ data class Track(
     /** Unique per track; CUE tracks share a file, so the start offset is part of the id. */
     val id get() = if (start == null) path else "$path#$start"
     val ext get() = path.substringAfterLast('.', "").lowercase()
+    val searchKey by lazy { searchFold("$title\u0000$artist") }
 }
+
+private val MARKS = Regex("\\p{Mn}+")
+
+/** Lowercase without accents, so "bjork" finds "Björk" and "ежик" finds "ёжик". */
+fun searchFold(s: String): String = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(MARKS, "")
 
 class Album(
     val id: String, val dir: String, val title: String, val artist: String, val year: Int?, val cover: String?,
@@ -28,6 +34,7 @@ class Album(
 ) {
     lateinit var tracks: List<Track>
     val duration get() = tracks.sumOf { it.duration }
+    val searchKey by lazy { searchFold("$title\u0000$artist") }
 }
 
 class Folder(val name: String, val path: String) {
@@ -40,7 +47,9 @@ class Catalog(val albums: List<Album>) {
     val tracks = albums.flatMap { it.tracks }
     val byId = tracks.associateBy { it.id }
     val artists: List<Pair<String, List<Album>>> =
-        albums.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }
+        albums.groupBy { it.artist.lowercase() }.values
+            .map { list -> list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key to list }
+            .sortedBy { it.first.lowercase() }
     val root = Folder("Folders", "").also { root ->
         for (a in albums) {
             var f = root
@@ -108,7 +117,10 @@ class Library(context: Context, private val cache: Cache) {
 
     fun isLiked(t: Track) = (t.likedInCatalog || t.id in set("liked+")) && t.id !in set("liked-")
 
-    fun setLiked(t: Track, liked: Boolean) {
+    /** Guards the like sets; the network part of a sync runs outside it so taps never wait for it. */
+    private val likesLock = Any()
+
+    fun setLiked(t: Track, liked: Boolean) = synchronized(likesLock) {
         val plus = set("liked+").toMutableSet(); val minus = set("liked-").toMutableSet()
         if (liked) { minus.remove(t.id); if (!t.likedInCatalog) plus.add(t.id) }
         else { plus.remove(t.id); if (t.likedInCatalog) minus.add(t.id) }
@@ -122,16 +134,22 @@ class Library(context: Context, private val cache: Cache) {
     @Synchronized
     fun syncLikes(b2: B2) {
         // Installs from before syncing have local likes but no flag: upload them first.
-        if (prefs.getBoolean("likesDirty", set("liked+").isNotEmpty() || set("liked-").isNotEmpty())) {
-            val j = JSONObject().put("version", 1)
-                .put("added", JSONArray(set("liked+").sorted())).put("removed", JSONArray(set("liked-").sorted()))
+        val (dirty, plus, minus) = synchronized(likesLock) {
+            Triple(prefs.getBoolean("likesDirty", set("liked+").isNotEmpty() || set("liked-").isNotEmpty()), set("liked+").toSet(), set("liked-").toSet())
+        }
+        if (dirty) {
+            val j = JSONObject().put("version", 1).put("added", JSONArray(plus.sorted())).put("removed", JSONArray(minus.sorted()))
             b2.upload(LIKES, j.toString(1).toByteArray(), "application/json")
-            prefs.edit().putBoolean("likesDirty", false).apply()
+            // A like made during the upload keeps the flag, so it goes up with the next sync.
+            synchronized(likesLock) { if (set("liked+") == plus && set("liked-") == minus) prefs.edit().putBoolean("likesDirty", false).apply() }
         } else {
             val bytes = b2.fetchOrNull(LIKES) ?: return
             val j = JSONObject(bytes.decodeToString())
             fun arr(k: String) = j.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-            prefs.edit().putStringSet("liked+", arr("added")).putStringSet("liked-", arr("removed")).apply()
+            synchronized(likesLock) {
+                if (prefs.getBoolean("likesDirty", false)) return   // liked something while downloading: keep it
+                prefs.edit().putStringSet("liked+", arr("added")).putStringSet("liked-", arr("removed")).apply()
+            }
         }
     }
 

@@ -100,6 +100,7 @@ class B2(private val context: Context) {
         c.setRequestProperty("Authorization", token)
         c.connectTimeout = 15000; c.readTimeout = 30000
         c.outputStream.use { it.write(body.toString().toByteArray()) }
+        if (c.responseCode == 401) throw Unauthorized("POST $url: HTTP 401")
         if (c.responseCode != 200) {
             throw IOException("POST $url: HTTP ${c.responseCode} ${c.errorStream?.bufferedReader()?.readText().orEmpty()}")
         }
@@ -112,7 +113,7 @@ class B2(private val context: Context) {
     ).getJSONArray("buckets").getJSONObject(0).getString("bucketId")
 
     /** Uploads a small file (needs a key with writeFiles) and returns its fileId. */
-    fun upload(key: String, bytes: ByteArray, contentType: String): String {
+    fun upload(key: String, bytes: ByteArray, contentType: String): String = reauthorizing {
         val a = auth()
         val up = post("${a.apiUrl}/b2api/v2/b2_get_upload_url", a.token, JSONObject().put("bucketId", bucketId(a)))
         val c = URL(up.getString("uploadUrl")).openConnection() as HttpURLConnection
@@ -125,34 +126,46 @@ class B2(private val context: Context) {
         c.connectTimeout = 15000; c.readTimeout = 30000
         c.outputStream.use { it.write(bytes) }
         if (c.responseCode != 200) throw IOException("upload $key: HTTP ${c.responseCode}")
-        return JSONObject(c.inputStream.bufferedReader().readText()).getString("fileId")
+        JSONObject(c.inputStream.bufferedReader().readText()).getString("fileId")
     }
 
     /** Removes one stored version of a file (the bucket keeps old versions otherwise). */
-    fun deleteVersion(key: String, fileId: String) {
+    fun deleteVersion(key: String, fileId: String) = reauthorizing {
         val a = auth()
         post("${a.apiUrl}/b2api/v2/b2_delete_file_version", a.token, JSONObject().put("fileName", key).put("fileId", fileId))
     }
 
     /** Small object as bytes, or null when it does not exist. */
-    fun fetchOrNull(key: String): ByteArray? {
+    fun fetchOrNull(key: String): ByteArray? = reauthorizing {
         val (url, token) = request(key)
         val c = URL(url).openConnection() as HttpURLConnection
         c.setRequestProperty("Authorization", token)
         c.connectTimeout = 15000; c.readTimeout = 30000
-        return when (c.responseCode) {
+        when (c.responseCode) {
             200 -> c.inputStream.use { it.readBytes() }
             404 -> null
+            401 -> throw Unauthorized("GET $key: HTTP 401")
             else -> throw IOException("GET $key: HTTP ${c.responseCode}")
         }
     }
 
     fun download(key: String, dst: File) {
         dst.parentFile?.mkdirs()
-        val tmp = File(dst.path + ".part")
-        open(key).inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
-        if (!tmp.renameTo(dst)) throw IOException("rename failed: $dst")
+        // Own temp name per call: two downloads of the same file (a cover shown twice) must not collide.
+        val tmp = File(dst.parentFile, "${dst.name}.${java.util.UUID.randomUUID()}.part")
+        try {
+            open(key).inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            if (!tmp.renameTo(dst) && !dst.exists()) throw IOException("rename failed: $dst")
+        } finally {
+            tmp.delete()
+        }
     }
+
+    private class Unauthorized(message: String) : IOException(message)
+
+    /** The saved token can be revoked early; on 401 sign in again and retry once. */
+    private fun <T> reauthorizing(block: () -> T): T =
+        try { block() } catch (e: Unauthorized) { invalidate(); block() }
 
     companion object { const val DEFAULT_BUCKET = "buyolitsez-music" }
 }

@@ -29,7 +29,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -46,6 +52,12 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) ui.open(Screen.Settings)
         ui.refreshCatalog()
+        // Download progress and finished downloads refresh the "downloaded" marks in lists.
+        lifecycleScope.launch {
+            WorkManager.getInstance(this@MainActivity).getWorkInfosByTagFlow(DownloadWorker.TAG)
+                .map { list -> list.map { it.state to it.progress.getInt("done", 0) } }
+                .distinctUntilChanged().drop(1).collect { ui.version++ }
+        }
         setContent {
             val accent by animateColorAsState(ui.colors.accent, label = "accent")
             PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = Color.Black) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
@@ -80,14 +92,19 @@ private val tabIcons: Map<Tab, ImageVector> = mapOf(
 )
 
 @UnstableApi
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
     val offline by ui.app.prefs.offlineOnly.collectAsState()
     val stack = ui.stack()
     val screen = stack.last()
-    BackHandler(stack.size > 1 || (ui.tab == Tab.Search && ui.query.isNotEmpty())) { ui.back() }
+    // Back first closes the keyboard, then goes back.
+    val imeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+    BackHandler(imeVisible || stack.size > 1 || (ui.tab == Tab.Search && ui.query.isNotEmpty())) {
+        if (imeVisible) focusManager.clearFocus() else ui.back()
+    }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
     LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
@@ -142,7 +159,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
             )
         },
         bottomBar = {
-            Column(Modifier.background(Color.Black).navigationBarsPadding()) {
+            // Above the keyboard when it is open, so the tabs, mini player and messages stay visible.
+            Column(Modifier.background(Color.Black).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
                 if (ui.tab != Tab.Now) MiniPlayer(ui, cat)
                 HorizontalDivider(color = Gray2)
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -157,11 +175,14 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            ui.status?.let { Text(it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            ui.status?.let {
+                val progress = it == Ui.UPDATING
+                Text(it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = if (progress) Muted else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
             val c = cat
             when {
                 screen == Screen.Settings -> SettingsScreen(ui, c)
-                c == null -> Placeholder("The library isn't loaded yet")
+                c == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
                 screen == Screen.Downloads -> DownloadsScreen(ui, c)
                 screen == Screen.LyricsView -> LyricsScreen(ui, c)
                 screen == Screen.EqualizerView -> EqualizerScreen(ui)

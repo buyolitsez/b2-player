@@ -209,7 +209,22 @@ def find_cover_file(d, files, extra_dirs):
                 return os.path.join(sub, f)
     if imgs:
         return os.path.join(d, sorted(imgs)[0])
-    return None
+    # Scans in an "Artwork"-style subfolder without a "cover" file: prefer "1.jpg"/"01 …",
+    # avoid disc and back scans.
+    scans = []
+    for sub in extra_dirs:
+        try:
+            scans += [os.path.join(sub, f) for f in os.listdir(sub) if os.path.splitext(f)[1].lower() in IMAGE_EXT]
+        except OSError:
+            pass
+    def rank(path):
+        name = os.path.splitext(os.path.basename(path))[0].lower()
+        if re.match(r"0*1\b", name) or re.search(r"\b0*1\b", name):
+            return (0, name)
+        if re.match(r"(cd|disc|disk|back|inlay|tray)", name):
+            return (2, name)
+        return (1, name)
+    return min(scans, key=rank) if scans else None
 
 
 def make_thumb(src_bytes, dst):

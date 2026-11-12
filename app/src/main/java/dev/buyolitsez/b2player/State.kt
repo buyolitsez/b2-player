@@ -30,15 +30,18 @@ class Playlists(context: Context) {
 
     fun add(id: String, trackIds: List<String>) = update(id) { p -> p.copy(trackIds = p.trackIds + trackIds.filter { it !in p.trackIds }) }
 
-    /** Same rule as likes: unsent local changes win, otherwise the bucket copy wins. */
-    @Synchronized
+    /**
+     * Same rule as likes: unsent local changes win, otherwise the bucket copy wins. The network
+     * part runs without the lock, so edits made meanwhile are kept and sent next time.
+     */
     fun sync(b2: B2) {
-        if (prefs.getBoolean("dirty", false)) {
-            b2.upload(KEY, toJson(all).toString(1).toByteArray(), "application/json")
-            prefs.edit().putBoolean("dirty", false).apply()
+        val (dirty, data) = synchronized(this) { prefs.getBoolean("dirty", false) to prefs.getString("data", null) }
+        if (dirty) {
+            b2.upload(KEY, toJson(parse(data)).toString(1).toByteArray(), "application/json")
+            synchronized(this) { if (prefs.getString("data", null) == data) prefs.edit().putBoolean("dirty", false).apply() }
         } else {
             val bytes = b2.fetchOrNull(KEY) ?: return
-            prefs.edit().putString("data", bytes.decodeToString()).apply()
+            synchronized(this) { if (!prefs.getBoolean("dirty", false)) prefs.edit().putString("data", bytes.decodeToString()).apply() }
         }
     }
 
