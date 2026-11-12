@@ -356,13 +356,14 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun lastFmLogout() { app.lastFm.logout(); version++ }
 
-    companion object { const val UPDATING = "Updating library…" }
+    companion object { const val UPDATING = "Updating library…"; const val SYNC_FAILED = "Sync failed: " }
 
     // ---------- sync and catalog ----------
 
     private fun syncInBackground(block: () -> Unit) = scope.launch {
         val err = withContext(Dispatchers.IO) { runCatching(block).exceptionOrNull() }
-        if (err != null) { status = "Sync failed: ${err.message}"; AppLog.w("sync", "Sync failed", err) }
+        if (err != null) { status = SYNC_FAILED + err.message; AppLog.w("sync", "Sync failed", err) }
+        else if (status?.startsWith(SYNC_FAILED) == true) status = null
     }
 
     fun toast(s: String) {
