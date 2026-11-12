@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # versionCode is the commit count
 
       - uses: actions/setup-java@v4
         with:
@@ -47,12 +49,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          tag="v$version-build.${{ github.run_number }}"
-          apk="b2-player-$version-build.${{ github.run_number }}.apk"
+          version="$(grep -oP 'baseVersion = "\K[^"]+' app/build.gradle.kts).$(git rev-list --count HEAD)"
+          tag="v$version"
+          apk="b2-player-$version.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           gh release create "$tag" "$apk" \
             --target "$GITHUB_SHA" \
-            --title "$version (build ${{ github.run_number }})" \
+            --title "$version" \
             --notes "$(git log -1 --pretty=%s)" \
             --latest
