@@ -3,6 +3,7 @@ name: Release APK
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -38,7 +39,9 @@ jobs:
       - name: Build
         run: ./gradlew assembleRelease
 
+      # PRs only check that the APK builds; releases come from main.
       - name: Publish
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
