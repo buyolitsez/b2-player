@@ -54,6 +54,8 @@ class Prefs(context: Context) {
     // Library
     val albumGrid = Bool("albumGrid", true)
     val albumSortRecent = Bool("albumSortRecent", false)
+    /** "Recently added" shows albums added in this many days; 0 shows all. */
+    val recentDays = Num("recentDays", 0)
     val gridColumns = Num("gridColumns", 3)
     val startTab = Str("startTab", "Albums")
     val swipeActions = Bool("swipeActions", true)
