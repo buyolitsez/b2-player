@@ -1,12 +1,15 @@
 package dev.buyolitsez.b2player
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.*
@@ -34,6 +37,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     var info by remember { mutableStateOf(false) }
     var sleep by remember { mutableStateOf(false) }
+    var lyricsOn by remember { mutableStateOf(false) }
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(500) } }
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     val accent = MaterialTheme.colorScheme.primary
@@ -72,7 +76,6 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
                     @Composable
                     fun item(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, action: () -> Unit) =
                         DropdownMenuItem({ Text(text) }, { menu = false; action() }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
-                    item("Lyrics", Icons.Default.Lyrics) { ui.open(Screen.LyricsView) }
                     item("Sleep timer", Icons.Default.Bedtime) { sleep = true }
                     item("Equalizer", Icons.Default.Equalizer) { ui.open(Screen.EqualizerView) }
                     item(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle) { ui.stopAfter(t) }
@@ -113,12 +116,23 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
             }
         }
     }
+    // The cover; a tap turns it into the lyrics and back.
+    @Composable
+    fun art(modifier: Modifier) {
+        val toggle = { lyricsOn = !lyricsOn }
+        Box(modifier.clip(RoundedCornerShape(3.dp)).clickable(remember { MutableInteractionSource() }, null, onClick = toggle)) {
+            Crossfade(lyricsOn, label = "cover") { on ->
+                if (on) LyricsPanel(ui, t, Modifier.fillMaxSize().background(Gray1), toggle)
+                else Cover(ui, t.album.cover, null, Modifier.fillMaxSize())
+            }
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(background)) {
         val coverSize = maxHeight - 16.dp
         if (maxWidth > maxHeight) {
             // Landscape: cover on the left, everything else scrolls on the right.
             Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(ui, t.album.cover, coverSize)
+                art(Modifier.size(coverSize))
                 Column(Modifier.weight(1f).padding(start = 24.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                     details(fill = false)
                 }
@@ -126,7 +140,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         } else {
             Column(Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(16.dp))
-                Cover(ui, t.album.cover, null, Modifier.fillMaxWidth())
+                art(Modifier.fillMaxWidth().aspectRatio(1f))
                 Spacer(Modifier.height(18.dp))
                 details(fill = true)
             }
