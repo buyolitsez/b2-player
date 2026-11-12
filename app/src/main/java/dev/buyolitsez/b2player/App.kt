@@ -101,9 +101,11 @@ class App : Application() {
     lateinit var cachedCatalogLoad: kotlinx.coroutines.Job
     /** Pause when the track with this id ends ("stop after this track"). */
     val stopAfterId = MutableStateFlow<String?>(null)
-    /** Sleep timer: pause at this time (epoch ms), or when the album changes after the one in [sleepAfterAlbum]. */
+    /** Sleep timer: pause at this time (epoch ms), or when the album changes after the one in [sleepAfterAlbum],
+     *  or after this many more tracks finish past the current one (0 = when the current one ends). */
     val sleepAt = MutableStateFlow<Long?>(null)
     val sleepAfterAlbum = MutableStateFlow<String?>(null)
+    val sleepAfterTracks = MutableStateFlow<Int?>(null)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
