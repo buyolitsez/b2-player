@@ -57,7 +57,14 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 /** Album thumbnails: memory LRU on top of a disk copy in cacheDir/covers. */
 @UnstableApi
 class Covers(private val app: App) {
-    private val mem = LruCache<String, Bitmap>(120)
+    // Sized in bytes: ~80 thumbnails at 512 px in RGB_565, instead of 120 in ARGB (~120 MB).
+    private val mem = object : LruCache<String, Bitmap>(40 shl 20) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+    private val decode = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+
+    /** Drops the decoded thumbnails, e.g. when the app goes to the background. */
+    fun trim() = mem.evictAll()
     private val dir = File(app.cacheDir, "covers")
 
     fun cached(key: String): Bitmap? = mem.get(key)
@@ -66,7 +73,7 @@ class Covers(private val app: App) {
         val f = File(dir, key.substringAfterLast('/'))
         try {
             if (!f.exists()) app.b2.download(key, f)
-            BitmapFactory.decodeFile(f.path)?.also { mem.put(key, it) }
+            BitmapFactory.decodeFile(f.path, decode)?.also { mem.put(key, it) }
         } catch (e: Exception) { null }
     }
 }

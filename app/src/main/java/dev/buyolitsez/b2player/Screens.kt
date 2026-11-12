@@ -38,8 +38,8 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
     val recent = ui.prefs.albumSortRecent
-    val albums = remember(cat, recent.value, ui.version) {
-        val list = cat.albums.filter { a -> !ui.offlineOnly || a.tracks.any { ui.library.availableOffline(it) } }
+    val albums = remember(cat, recent.value, ui.offlineOnly, ui.offlineIds) {
+        val list = if (!ui.offlineOnly) cat.albums else cat.albums.filter { a -> a.tracks.any { ui.visible(it) } }
         if (recent.value) list.sortedByDescending { it.added } else list
     }
     AlbumGrid(ui, albums, header = {
@@ -91,12 +91,13 @@ fun SearchTab(ui: Ui, cat: Catalog) {
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
-    val albums = remember(cat, q) {
-        if (q.length < 2) emptyList() else cat.albums.filter { fq in it.searchKey }
+    // Filtering 18k tracks runs off the main thread; the previous results stay until the new ones are ready.
+    val found by produceState(emptyList<Album>() to emptyList<Track>(), cat, fq, ui.offlineOnly, ui.offlineIds) {
+        value = if (fq.length < 2) emptyList<Album>() to emptyList() else withContext(Dispatchers.Default) {
+            cat.albums.filter { fq in it.searchKey } to cat.tracks.filter { fq in it.searchKey && ui.visible(it) }.take(200)
+        }
     }
-    val tracks = remember(cat, q, ui.version) {
-        if (q.length < 2) emptyList() else cat.tracks.filter { fq in it.searchKey && ui.visible(it) }.take(200)
-    }
+    val (albums, tracks) = found
     Column {
         OutlinedTextField(
             ui.query, { ui.query = it }, Modifier.fillMaxWidth().padding(10.dp).focusRequester(focus), singleLine = true,
@@ -269,7 +270,7 @@ fun DragHandle(modifier: Modifier) =
 @Composable
 fun LikedScreen(ui: Ui, cat: Catalog) {
     var byRecent by remember { mutableStateOf(false) }
-    val liked = remember(cat, ui.version, byRecent) {
+    val liked = remember(cat, ui.version, byRecent, ui.offlineOnly, ui.offlineIds) {
         val l = cat.tracks.filter { ui.library.isLiked(it) && ui.visible(it) }
         if (byRecent) l.sortedByDescending { it.album.added } else l
     }
@@ -379,7 +380,7 @@ fun QueueTab(ui: Ui, cat: Catalog) {
             val t = tracks[i]
             ReorderableItem(reorder, key = keys[i], enabled = !ui.shuffle) {
                 if (t == null) return@ReorderableItem
-                TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); play() } }, queueIndex = i,
+                TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
                     dragHandle = if (ui.shuffle) null else ({ DragHandle(Modifier.draggableHandle()) }))
             }
         }

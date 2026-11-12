@@ -75,11 +75,12 @@ class PlaybackService : MediaSessionService() {
                 AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
-                if (player.isPlaying) sendNowPlaying(item)
-                prefetch(player)
+                if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
+                // Only once the current track plays, so preloading never competes with its start.
+                if (isPlaying) prefetch(player)
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 AppLog.e("player", "${error.errorCodeName} on ${player.currentMediaItem?.mediaId}", error)
@@ -101,7 +102,7 @@ class PlaybackService : MediaSessionService() {
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
                     saveQueue(player)
                 }
-                if (events.contains(Player.EVENT_TIMELINE_CHANGED)) prefetch(player)
+                if (events.contains(Player.EVENT_TIMELINE_CHANGED) && p.isPlaying) prefetch(player)
             }
         })
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -142,7 +143,7 @@ class PlaybackService : MediaSessionService() {
             val n = presses; presses = 0
             AppLog.d("player", "Headset button x$n")
             when (n) {
-                1 -> if (player.isPlaying) player.pause() else player.play()
+                1 -> if (player.isPlaying) player.pause() else player.resume()
                 2 -> player.seekToNextMediaItem()
                 else -> player.seekToPrevious()
             }
@@ -199,8 +200,9 @@ class PlaybackService : MediaSessionService() {
         val items = tracks.map { app.library.mediaItem(it) }
         withContext(Dispatchers.Main) {
             if (player.mediaItemCount > 0) return@withContext
+            // Not prepared here: the service is recreated on every app start, and preparing would load
+            // the track (and its neighbours) each time. Play prepares it (MediaSession does that).
             player.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
-            player.prepare()
         }
     }
 
@@ -228,7 +230,8 @@ class PlaybackService : MediaSessionService() {
             if (i == C.INDEX_UNSET) break
             val item = player.getMediaItemAt(i)
             val uri = item.localConfiguration?.uri?.takeIf { it.scheme == "b2" } ?: continue
-            specs.add(prefetchSpec(uri, track(item)))
+            // The next track whole; later ones only their first minute or so, enough to start at once.
+            specs.add(prefetchSpec(uri, track(item)).let { if (n == 0) it else it.subrange(0, minOf(it.length.takeIf { l -> l > 0 } ?: HEAD, HEAD)) })
         }
         val writers = specs.distinct().map { spec -> CacheWriter(app.cachedB2Factory.createDataSource(), spec, null, null) }
         prefetching = writers
@@ -249,6 +252,8 @@ class PlaybackService : MediaSessionService() {
         val pos = from.coerceAtLeast(0)
         return DataSpec.Builder().setUri(uri).setPosition(pos).setLength(minOf(length, t.size - pos)).build()
     }
+
+    private companion object { const val HEAD = 8L shl 20 }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 

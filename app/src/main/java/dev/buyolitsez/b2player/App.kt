@@ -152,6 +152,10 @@ class App : Application() {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val local = DefaultDataSource.Factory(this)
         dataSourceFactory = DataSource.Factory { RoutingDataSource(local.createDataSource(), cachedB2Factory.createDataSource()) }
+        // Search keys (accent folding of 18k titles) are built here, not on the first keystroke.
+        scope.launch(Dispatchers.Default) {
+            catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey } } }
+        }
         cachedCatalogLoad = scope.launch(Dispatchers.IO) {
             val started = System.currentTimeMillis()
             library.catalogFile.takeIf { it.exists() }?.let { f ->

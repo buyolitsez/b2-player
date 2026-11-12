@@ -96,7 +96,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         }
         Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             IconButton({ c.seekToPrevious() }) { Icon(Icons.Default.SkipPrevious, null, Modifier.size(36.dp)) }
-            Box(Modifier.size(68.dp).clip(CircleShape).background(accent).clickable { if (ui.playing) c.pause() else c.play() }, Alignment.Center) {
+            Box(Modifier.size(68.dp).clip(CircleShape).background(accent).clickable { if (ui.playing) c.pause() else c.resume() }, Alignment.Center) {
                 Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(38.dp), tint = Color.Black)
             }
             IconButton({ c.seekToNextMediaItem() }) { Icon(Icons.Default.SkipNext, null, Modifier.size(36.dp)) }
@@ -175,6 +175,6 @@ fun MiniPlayer(ui: Ui, cat: Catalog?) {
         }
         SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
             if (ui.liked(t)) MaterialTheme.colorScheme.primary else Color.White) { ui.toggleLike(t) }
-        SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, Color.White) { c?.run { if (ui.playing) pause() else play() } }
+        SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, Color.White) { c?.run { if (ui.playing) pause() else resume() } }
     }
 }

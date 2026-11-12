@@ -78,6 +78,12 @@ class MainActivity : ComponentActivity() {
         }, MoreExecutors.directExecutor())
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // The UI is hidden (or memory is short): the thumbnails are cheap to decode again from disk.
+        if (level >= TRIM_MEMORY_UI_HIDDEN) ui.covers.trim()
+    }
+
     override fun onStop() {
         ui.controller?.release(); ui.controller = null
         (application as App).uploadLogs()
@@ -96,7 +102,8 @@ private val tabIcons: Map<Tab, ImageVector> = mapOf(
 @Composable
 fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
-    val offline by ui.app.prefs.offlineOnly.collectAsState()
+    val offline = ui.offlineOnly
+    LaunchedEffect(Unit) { ui.watchOffline() }
     val stack = ui.stack()
     val screen = stack.last()
     // Back first closes the keyboard, then goes back.

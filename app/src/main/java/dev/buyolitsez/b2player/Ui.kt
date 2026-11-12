@@ -102,8 +102,31 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     // ---------- library helpers ----------
 
-    val offlineOnly get() = prefs.offlineOnly.value
-    fun visible(t: Track) = !offlineOnly || library.availableOffline(t)
+    /**
+     * Offline-only mode as Compose state, and the ids of tracks on the phone. The set is built off
+     * the main thread (a file check and a cache lookup per track), see [watchOffline].
+     */
+    var offlineOnly by mutableStateOf(prefs.offlineOnly.value); private set
+    var offlineIds by mutableStateOf<Set<String>>(emptySet()); private set
+    fun visible(t: Track) = !offlineOnly || t.id in offlineIds
+
+    private suspend fun availableIds(cat: Catalog) =
+        withContext(Dispatchers.IO) { cat.tracks.filter { library.availableOffline(it) }.mapTo(HashSet()) { it.id } }
+
+    /** Keeps [offlineOnly] and [offlineIds] current; the mode switches only once the set is ready. */
+    suspend fun watchOffline() = kotlinx.coroutines.coroutineScope {
+        launch {
+            prefs.offlineOnly.collect { on ->
+                val cat = app.catalog.value
+                if (on && cat != null) offlineIds = availableIds(cat)
+                offlineOnly = on
+            }
+        }
+        launch {
+            kotlinx.coroutines.flow.combine(app.catalog, androidx.compose.runtime.snapshotFlow { version }) { c, _ -> c }
+                .collect { c -> if (c != null && offlineOnly) offlineIds = availableIds(c) }
+        }
+    }
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
     fun downloaded(t: Track): Boolean { version; return library.isDownloaded(t) }
 
@@ -127,17 +150,20 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     }
 
     /** Replaces the queue; the old one can be brought back from the snackbar. */
-    fun play(tracks: List<Track>, index: Int, shuffled: Boolean = false) {
-        val c = controller ?: return
+    fun play(tracks: List<Track>, index: Int, shuffled: Boolean = false) = scope.launch {
+        val c = controller ?: return@launch
         val list = tracks.filter { visible(it) }
-        if (list.isEmpty()) { toast("Nothing here is available offline"); return }
+        if (list.isEmpty()) { toast("Nothing here is available offline"); return@launch }
         val start = tracks.getOrNull(index)?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val before = snapshot()
         val wasShuffled = c.shuffleModeEnabled
         // "Shuffle" turns shuffle on; a plain play keeps whatever mode the player is in.
         if (shuffled) c.shuffleModeEnabled = true
         AppLog.d("ui", "Play ${list.size} tracks from ${list.first().album.dir}, start $start, shuffle $shuffled")
-        c.setMediaItems(list.map { library.mediaItem(it) }, if (shuffled) list.indices.random() else start, 0)
+        // A file check per track: for a 2600-track list that is too slow for the main thread.
+        val items = withContext(Dispatchers.IO) { list.map { library.mediaItem(it) } }
+        if (controller !== c) return@launch
+        c.setMediaItems(items, if (shuffled) list.indices.random() else start, 0)
         c.prepare(); c.play()
         if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
             scope.launch {
@@ -368,6 +394,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         version++
     }
 }
+
+/** Play, preparing first: a queue restored at start is left unprepared until it is played. */
+fun Player.resume() { if (playbackState == Player.STATE_IDLE) prepare(); play() }
 
 fun formatSize(bytes: Long): String = when {
     bytes >= 1L shl 30 -> "%.1f GB".format(bytes / (1L shl 30).toDouble())

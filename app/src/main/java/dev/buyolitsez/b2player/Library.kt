@@ -69,31 +69,78 @@ class Catalog(val albums: List<Album>) {
     }
 
     companion object {
+        /** Streaming parse (android.util.JsonReader): about twice as fast as building org.json trees. */
         fun parse(bytes: ByteArray): Catalog {
-            val text = if (bytes.size > 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte())
-                GZIPInputStream(bytes.inputStream()).readBytes().decodeToString() else bytes.decodeToString()
-            val arr = JSONObject(text).getJSONArray("albums")
-            val albums = ArrayList<Album>(arr.length())
-            for (i in 0 until arr.length()) {
-                val a = arr.getJSONObject(i)
-                val album = Album(
-                    a.getString("id"), a.getString("dir"), a.getString("title"), a.getString("artist"),
-                    if (a.isNull("year")) null else a.getInt("year"), if (a.isNull("cover")) null else a.getString("cover"),
-                    a.optLong("added", 0),
-                )
-                val tr = a.getJSONArray("tracks")
-                album.tracks = (0 until tr.length()).map { k ->
-                    val t = tr.getJSONObject(k)
-                    Track(
-                        t.getString("path"), t.getString("title"), t.optString("artist", album.artist), album,
-                        if (t.has("track")) t.getInt("track") else null, if (t.has("disc")) t.getInt("disc") else null,
-                        t.optDouble("duration", 0.0), if (t.has("start")) t.getDouble("start") else null,
-                        t.optLong("size", 0), t.optBoolean("liked", false), t.optBoolean("ly", false),
-                    )
+            val gz = bytes.size > 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
+            val input = if (gz) GZIPInputStream(bytes.inputStream(), 1 shl 16) else bytes.inputStream()
+            val albums = ArrayList<Album>(2048)
+            android.util.JsonReader(input.bufferedReader()).use { r ->
+                r.beginObject()
+                while (r.hasNext()) {
+                    if (r.nextName() != "albums") { r.skipValue(); continue }
+                    r.beginArray()
+                    while (r.hasNext()) albums.add(readAlbum(r))
+                    r.endArray()
                 }
-                albums.add(album)
+                r.endObject()
             }
             return Catalog(albums)
+        }
+
+        private fun android.util.JsonReader.str(): String? =
+            if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextString()
+        private fun android.util.JsonReader.int(): Int? =
+            if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextInt()
+
+        private class RawTrack(
+            val path: String, val title: String, val artist: String?, val number: Int?, val disc: Int?,
+            val duration: Double, val start: Double?, val size: Long, val liked: Boolean, val lyrics: Boolean,
+        )
+
+        private fun readAlbum(r: android.util.JsonReader): Album {
+            var id = ""; var dir = ""; var title = ""; var artist = ""; var year: Int? = null; var cover: String? = null; var added = 0L
+            val raw = ArrayList<RawTrack>()
+            r.beginObject()
+            while (r.hasNext()) when (r.nextName()) {
+                "id" -> id = r.nextString()
+                "dir" -> dir = r.nextString()
+                "title" -> title = r.nextString()
+                "artist" -> artist = r.nextString()
+                "year" -> year = r.int()
+                "cover" -> cover = r.str()
+                "added" -> added = r.nextLong()
+                "tracks" -> {
+                    r.beginArray()
+                    while (r.hasNext()) {
+                        var path = ""; var tTitle = ""; var tArtist: String? = null; var number: Int? = null; var disc: Int? = null
+                        var duration = 0.0; var start: Double? = null; var size = 0L; var liked = false; var ly = false
+                        r.beginObject()
+                        while (r.hasNext()) when (r.nextName()) {
+                            "path" -> path = r.nextString()
+                            "title" -> tTitle = r.nextString()
+                            "artist" -> tArtist = r.str()
+                            "track" -> number = r.int()
+                            "disc" -> disc = r.int()
+                            "duration" -> duration = r.nextDouble()
+                            "start" -> start = r.nextDouble()
+                            "size" -> size = r.nextLong()
+                            "liked" -> liked = r.nextBoolean()
+                            "ly" -> ly = r.nextBoolean()
+                            else -> r.skipValue()
+                        }
+                        r.endObject()
+                        raw.add(RawTrack(path, tTitle, tArtist, number, disc, duration, start, size, liked, ly))
+                    }
+                    r.endArray()
+                }
+                else -> r.skipValue()
+            }
+            r.endObject()
+            val album = Album(id, dir, title, artist, year, cover, added)
+            album.tracks = raw.map { t ->
+                Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics)
+            }
+            return album
         }
     }
 }
