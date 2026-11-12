@@ -214,6 +214,19 @@ class Library(context: Context, private val cache: Cache) {
         while (d != null && d != offlineDir && d.list()?.isEmpty() == true) { d.delete(); d = d.parentFile }
     }
 
+    /**
+     * Drops cached files whose size no longer matches the catalog: the file in the bucket was
+     * replaced (tags rewritten by apply-tags.py), and old cached bytes must not mix with new ones.
+     */
+    fun dropStaleCache(c: Catalog) {
+        val sizes = c.tracks.associate { uriFor(it.path).toString() to it.size }
+        for (key in cache.keys.toList()) {
+            val cached = androidx.media3.datasource.cache.ContentMetadata.getContentLength(cache.getContentMetadata(key))
+            val size = sizes[key] ?: continue
+            if (cached > 0 && size > 0 && cached != size) { cache.removeResource(key); AppLog.i("cache", "Dropped stale $key") }
+        }
+    }
+
     fun clearCache() { cache.keys.toList().forEach { cache.removeResource(it) } }
     fun cacheBytes() = cache.cacheSpace
 
