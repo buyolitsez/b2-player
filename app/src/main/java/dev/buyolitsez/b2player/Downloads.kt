@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.media3.common.util.UnstableApi
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -17,24 +18,35 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Downloads whole files for offline listening into Library.offlineDir. */
+@UnstableApi
 class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val app = applicationContext as App
         val paths = inputData.getStringArray("paths").orEmpty().distinct()
+        val title = inputData.getString("title").orEmpty()
         var failed = 0
-        for (p in paths) {
+        paths.forEachIndexed { i, p ->
+            setProgress(workDataOf("title" to title, "done" to i, "total" to paths.size))
             val dst = app.library.offlineFile(p)
-            if (dst.exists()) continue
-            try { app.b2.download(Library.MUSIC + p, dst) } catch (e: Exception) { failed++ }
+            if (!dst.exists()) {
+                try { app.b2.download(Library.MUSIC + p, dst) } catch (e: Exception) { failed++ }
+            }
         }
         if (failed > 0 && runAttemptCount < 3) Result.retry() else Result.success()
     }
 
     companion object {
-        fun enqueue(context: Context, name: String, paths: List<String>) {
+        const val TAG = "download"
+
+        /** [wifiOnly] is for automatic downloads (liked tracks); manual ones use any network. */
+        fun enqueue(context: Context, name: String, title: String, tracks: List<Track>, wifiOnly: Boolean = false) {
             val req = OneTimeWorkRequestBuilder<DownloadWorker>()
-                .setInputData(workDataOf("paths" to paths.toTypedArray()))
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setInputData(workDataOf("paths" to tracks.map { it.path }.distinct().toTypedArray(), "title" to title))
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
+                )
+                .addTag(TAG)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork("dl:$name", ExistingWorkPolicy.KEEP, req)
         }
@@ -42,8 +54,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 }
 
 /** Album thumbnails: memory LRU on top of a disk copy in cacheDir/covers. */
+@UnstableApi
 class Covers(private val app: App) {
-    private val mem = LruCache<String, Bitmap>(64)
+    private val mem = LruCache<String, Bitmap>(120)
     private val dir = File(app.cacheDir, "covers")
 
     fun cached(key: String): Bitmap? = mem.get(key)
