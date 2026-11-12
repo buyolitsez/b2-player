@@ -276,7 +276,8 @@ def main():
             t = read_tags(p)
             if t is None:
                 continue
-            liked = (f, os.path.getsize(p)) in fav_ns
+            st = os.stat(p)
+            liked = (f, st.st_size) in fav_ns
             if not liked and t["artist"] and t["title"]:
                 k = (t["artist"].lower(), t["title"].lower())
                 if k in fav_tags:
@@ -292,9 +293,11 @@ def main():
                         "artist": ct["performer"] or c_perf or t["artist"], "albumartist": c_perf or t["albumartist"],
                         "album": c_album or t["album"], "track": ct["track"], "disc": None, "year": t["year"],
                         "start": ct["start"], "duration": round(end - ct["start"], 3), "liked": liked,
+                        "size": st.st_size, "mtime": int(st.st_mtime),
                     })
             else:
-                entries.append({**t, "path": rel, "title": t["title"] or os.path.splitext(f)[0], "liked": liked})
+                entries.append({**t, "path": rel, "title": t["title"] or os.path.splitext(f)[0], "liked": liked,
+                                "size": st.st_size, "mtime": int(st.st_mtime)})
 
             for e in entries:
                 key = group_dir + "\0" + (e["album"] or "")
@@ -331,7 +334,7 @@ def main():
 
         tracks = []
         for x in tr:
-            o = {"path": x["path"], "title": x["title"], "duration": x["duration"]}
+            o = {"path": x["path"], "title": x["title"], "duration": x["duration"], "size": x["size"]}
             if x["artist"] and x["artist"] != artist:
                 o["artist"] = x["artist"]
             for k in ("track", "disc", "start"):
@@ -341,7 +344,8 @@ def main():
                 o["liked"] = True
             tracks.append(o)
         out_albums.append({"id": aid, "dir": al["dir"], "title": title, "artist": artist or "Unknown",
-                           "year": common(x["year"] for x in tr), "cover": cover, "tracks": tracks})
+                           "year": common(x["year"] for x in tr), "cover": cover,
+                           "added": max(x["mtime"] for x in tr), "tracks": tracks})
 
     out_albums.sort(key=lambda x: (x["artist"].lower(), x["year"] or 0, x["title"].lower()))
     catalog = {"version": 1, "generated": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
