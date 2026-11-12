@@ -12,6 +12,7 @@ buyolitsez-music/
   state/likes.json         лайки (отличия от отметок каталога)
   state/playlists.json     плейлисты
   state/history.tsv        история прослушиваний: время и id трека
+  state/tags.json          правки тегов с телефона, ещё не записанные в файлы
 ```
 
 Старые версии файлов B2 хранит сам (lifecycle «Keep all versions»), поэтому бакет — это ещё и
@@ -28,7 +29,15 @@ tools/sync-music.sh --dry-run          # что изменится
 tools/sync-music.sh                    # полная синхронизация ~/Music -> music/ (не стартует, пока идёт restic)
 tools/sync-music.sh -- "rock/Swans"    # только эти подпапки
 tools/publish-catalog.sh               # каталог + обложки, затем проверка, что все пути есть в бакете
+tools/apply-tags.py                    # правки тегов с телефона: что изменится в ~/Music
+tools/apply-tags.py --apply            # записать их в файлы и убрать записанное из state/tags.json
 ```
+
+Правка тегов: «Track info» в меню трека → Edit. Телефон кладёт правки в `state/tags.json`
+(`{"tracks": {"<путь>": {"GENRE": "…"}}}`, пустое значение удаляет тег) и показывает их поверх тегов
+файла. `apply-tags.py --apply` пишет их в `~/Music` через mutagen и печатает команду
+`sync-music.sh -- <папки> && publish-catalog.sh`. Когда в каталоге меняется размер файла, телефон
+выбрасывает его старую копию из кэша стрима.
 
 `make_catalog.py`:
 - группирует треки в альбомы по папкам (`CD1`/`Disc 2` объединяются с родителем), внутри папки — по тегу album;

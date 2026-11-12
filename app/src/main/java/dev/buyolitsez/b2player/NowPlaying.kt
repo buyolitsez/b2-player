@@ -35,7 +35,6 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
     if (c == null || t == null) { Placeholder("Nothing is playing"); return }
     var pos by remember { mutableLongStateOf(0L) }
     var dragging by remember { mutableStateOf<Float?>(null) }
-    var info by remember { mutableStateOf(false) }
     var sleep by remember { mutableStateOf(false) }
     var lyricsOn by remember { mutableStateOf(false) }
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(500) } }
@@ -83,7 +82,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
                     item("Go to album", Icons.Default.Album) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
                     item("Go to artist", Icons.Default.Person) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
                     item("Show folder", Icons.Default.Folder) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
-                    item("File info", Icons.Default.Info) { info = true }
+                    item("Track info", Icons.Default.Info) { ui.trackInfo = t }
                 }
             }
         }
@@ -147,19 +146,6 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         }
     }
     if (sleep) SleepTimerDialog(ui) { sleep = false }
-    if (info) {
-        AlertDialog({ info = false }, confirmButton = { TextButton({ info = false }) { Text("OK") } },
-            title = { Text("File info") }, containerColor = Gray2,
-            text = {
-                Text(
-                    listOfNotNull(
-                        t.path, "${t.ext.uppercase()} · ${formatSize(t.size)}",
-                        t.start?.let { "CUE track from ${formatTime(it)}" },
-                        if (ui.downloaded(t)) "Downloaded to the phone" else if (ui.library.isCached(t)) "In the stream cache" else "Streamed from B2",
-                    ).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
-                )
-            })
-    }
 }
 
 @UnstableApi

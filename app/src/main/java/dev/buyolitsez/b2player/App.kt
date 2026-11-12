@@ -154,7 +154,7 @@ class App : Application() {
         dataSourceFactory = DataSource.Factory { RoutingDataSource(local.createDataSource(), cachedB2Factory.createDataSource()) }
         // Search keys (accent folding of 18k titles) are built here, not on the first keystroke.
         scope.launch(Dispatchers.Default) {
-            catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey } } }
+            catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey }; library.dropStaleCache(this) } }
         }
         cachedCatalogLoad = scope.launch(Dispatchers.IO) {
             val started = System.currentTimeMillis()
