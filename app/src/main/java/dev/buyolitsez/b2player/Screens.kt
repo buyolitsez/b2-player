@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -38,24 +39,35 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
     val recent = ui.prefs.albumSortRecent
-    val albums = remember(cat, recent.value, ui.offlineOnly, ui.offlineIds) {
-        val list = if (!ui.offlineOnly) cat.albums else cat.albums.filter { a -> a.tracks.any { ui.visible(it) } }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val albums = remember(cat, recent.value, ui.offlineOnly, ui.offlineIds, fq) {
+        val list = cat.albums.filter { a -> fq in a.searchKey && (!ui.offlineOnly || a.tracks.any { ui.visible(it) }) }
         if (recent.value) list.sortedByDescending { it.added } else list
     }
-    AlbumGrid(ui, albums, header = {
-        Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("By artist", active = !recent.value) { recent.set(false) }
-            Pill("Recently added", active = recent.value) { recent.set(true) }
-        }
-    })
+    Column {
+        FilterField(q) { q = it }
+        AlbumGrid(ui, albums, header = {
+            Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill("By artist", active = !recent.value) { recent.set(false) }
+                Pill("Recently added", active = recent.value) { recent.set(true) }
+            }
+        })
+    }
 }
 
 @UnstableApi
 @Composable
 fun ArtistsTab(ui: Ui, cat: Catalog) {
-    LazyColumn {
-        items(cat.artists, key = { it.first }) { (name, albums) ->
-            ListRow(Icons.Default.Person, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name)) }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val artists = remember(cat, fq) { cat.artists.filter { fq in searchFold(it.first) } }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            items(artists, key = { it.first }) { (name, albums) ->
+                ListRow(Icons.Default.Person, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name)) }
+            }
         }
     }
 }
@@ -65,21 +77,32 @@ fun ArtistsTab(ui: Ui, cat: Catalog) {
 fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     val albums = remember(cat, name) { cat.albums.filter { it.artist.equals(name, ignoreCase = true) }.sortedBy { it.year ?: 0 } }
     val tracks = remember(albums) { albums.flatMap { it.tracks } }
-    AlbumGrid(ui, albums, header = { PlayButtons(ui, "artist:$name", name, tracks) })
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
+    Column {
+        FilterField(q) { q = it }
+        AlbumGrid(ui, shown, header = { PlayButtons(ui, "artist:$name", name, tracks) })
+    }
 }
 
 @UnstableApi
 @Composable
 fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
     val f = remember(cat, path) { cat.folder(path) } ?: return
-    val subs = f.folders.values.toList()
-    LazyColumn {
-        if (path.isNotEmpty()) item { PlayButtons(ui, "folder:$path", f.name, f.allTracks) }
-        items(subs, key = { "f" + it.path }) { s ->
-            ListRow(Icons.Default.Folder, s.name, "${s.allTracks.size} tracks") { ui.open(Screen.FolderView(s.path)) }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val subs = remember(f, fq) { f.folders.values.filter { fq in searchFold(it.name) } }
+    val tracks = remember(f, fq, ui.offlineOnly, ui.offlineIds) { f.tracks.filter { fq in it.searchKey && ui.visible(it) } }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            if (path.isNotEmpty()) item { PlayButtons(ui, "folder:$path", f.name, f.allTracks) }
+            items(subs, key = { "f" + it.path }) { s ->
+                ListRow(Icons.Default.Folder, s.name, "${s.allTracks.size} tracks") { ui.open(Screen.FolderView(s.path)) }
+            }
+            itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(tracks, i) }) }
         }
-        val tracks = f.tracks.filter { ui.visible(it) }
-        itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(tracks, i) }) }
     }
 }
 
@@ -172,24 +195,30 @@ fun PlaylistsTab(ui: Ui, cat: Catalog, importM3u: () -> Unit) {
     val lists = remember(ui.version) { ui.app.playlists.all }
     val likedCount = remember(cat, ui.version) { cat.tracks.count { ui.library.isLiked(it) } }
     var creating by remember { mutableStateOf(false) }
-    LazyColumn {
-        item {
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Pill("New playlist", Icons.Default.Add) { creating = true }
-                Pill("Import .m3u", Icons.Default.FileOpen) { importM3u() }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val shown = remember(lists, fq) { lists.filter { fq in searchFold(it.name) } }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            if (fq.isEmpty()) item {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Pill("New playlist", Icons.Default.Add) { creating = true }
+                    Pill("Import .m3u", Icons.Default.FileOpen) { importM3u() }
+                }
+                ListRow(Icons.Default.Favorite, "Liked", "$likedCount tracks") { ui.open(Screen.LikedView) }
+                ListRow(Icons.Default.History, "History and stats", "${ui.app.history.all().size} plays") { ui.open(Screen.HistoryView) }
+                ListRow(Icons.Default.NewReleases, "Recently added", "Albums, newest first") {
+                    ui.prefs.albumSortRecent.set(true); ui.stacks[Tab.Albums] = listOf(Screen.Root); ui.tab = Tab.Albums
+                }
+                if (lists.isNotEmpty()) SectionTitle("Your playlists")
             }
-            ListRow(Icons.Default.Favorite, "Liked", "$likedCount tracks") { ui.open(Screen.LikedView) }
-            ListRow(Icons.Default.History, "History and stats", "${ui.app.history.all().size} plays") { ui.open(Screen.HistoryView) }
-            ListRow(Icons.Default.NewReleases, "Recently added", "Albums, newest first") {
-                ui.prefs.albumSortRecent.set(true); ui.stacks[Tab.Albums] = listOf(Screen.Root); ui.tab = Tab.Albums
+            items(shown, key = { it.id }) { p ->
+                ListRow(Icons.AutoMirrored.Filled.QueueMusic, p.name, "${p.trackIds.size} tracks") { ui.open(Screen.PlaylistView(p.id)) }
             }
-            if (lists.isNotEmpty()) SectionTitle("Your playlists")
-        }
-        items(lists, key = { it.id }) { p ->
-            ListRow(Icons.AutoMirrored.Filled.QueueMusic, p.name, "${p.trackIds.size} tracks") { ui.open(Screen.PlaylistView(p.id)) }
         }
     }
     if (creating) NameDialog("New playlist", "", { creating = false }) { ui.createPlaylist(it) }
@@ -220,27 +249,36 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
         ui.editPlaylist(id) { pl -> pl.copy(trackIds = pl.trackIds.toMutableList().apply { add(to.index - 1, removeAt(from.index - 1)) }) }
     }
     fun dropAt(i: Int): Unit = ui.editPlaylist(id) { pl -> pl.copy(trackIds = pl.trackIds.toMutableList().apply { removeAt(i) }) }
-    LazyColumn(state = listState) {
-        item(key = "header") {
-            Column {
-                Text(
-                    "${tracks.size} tracks · ${formatTime(tracks.sumOf { it.duration })}",
-                    Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall, color = Muted,
-                )
-                PlayButtons(ui, "playlist:$id", p.name, tracks, extra = {
-                    Pill("Rename", Icons.Default.Edit) { renaming = true }
-                    Pill("Delete", Icons.Default.Delete) { confirmDelete = true }
-                })
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    // Rows keep their playlist index so remove works on the filtered list; dragging is off while filtering.
+    val shown = remember(tracks, fq) { tracks.indices.filter { fq in tracks[it].searchKey } }
+    val shownTracks = remember(shown) { shown.map { tracks[it] } }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn(state = listState) {
+            item(key = "header") {
+                Column {
+                    Text(
+                        "${tracks.size} tracks · ${formatTime(tracks.sumOf { it.duration })}",
+                        Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall, color = Muted,
+                    )
+                    PlayButtons(ui, "playlist:$id", p.name, shownTracks, extra = {
+                        Pill("Rename", Icons.Default.Edit) { renaming = true }
+                        Pill("Delete", Icons.Default.Delete) { confirmDelete = true }
+                    })
+                }
             }
-        }
-        itemsIndexed(tracks, key = { i, _ -> keys[i] }) { i, t ->
-            ReorderableItem(reorder, key = keys[i]) {
-                TrackRow(
-                    ui, t, showCover = true, onClick = { ui.play(tracks, i) },
-                    dragHandle = { DragHandle(Modifier.draggableHandle()) },
-                    onSwipeLeft = { dropAt(i) }, swipeLeftLabel = "Remove from playlist",
-                    extraMenu = { close -> MenuItem("Remove from playlist", Icons.Default.RemoveCircleOutline, close) { dropAt(i) } },
-                )
+            itemsIndexed(shown, key = { _, i -> keys[i] }) { pos, i ->
+                val t = tracks[i]
+                ReorderableItem(reorder, key = keys[i], enabled = fq.isEmpty()) {
+                    TrackRow(
+                        ui, t, showCover = true, onClick = { ui.play(shownTracks, pos) },
+                        dragHandle = if (fq.isEmpty()) ({ DragHandle(Modifier.draggableHandle()) }) else null,
+                        onSwipeLeft = { dropAt(i) }, swipeLeftLabel = "Remove from playlist",
+                        extraMenu = { close -> MenuItem("Remove from playlist", Icons.Default.RemoveCircleOutline, close) { dropAt(i) } },
+                    )
+                }
             }
         }
     }
@@ -270,17 +308,22 @@ fun DragHandle(modifier: Modifier) =
 @Composable
 fun LikedScreen(ui: Ui, cat: Catalog) {
     var byRecent by remember { mutableStateOf(false) }
-    val liked = remember(cat, ui.version, byRecent, ui.offlineOnly, ui.offlineIds) {
-        val l = cat.tracks.filter { ui.library.isLiked(it) && ui.visible(it) }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val liked = remember(cat, ui.version, byRecent, ui.offlineOnly, ui.offlineIds, fq) {
+        val l = cat.tracks.filter { fq in it.searchKey && ui.library.isLiked(it) && ui.visible(it) }
         if (byRecent) l.sortedByDescending { it.album.added } else l
     }
-    LazyColumn {
-        item {
-            PlayButtons(ui, "liked", "Liked", liked, extra = {
-                Pill(if (byRecent) "Newest" else "A–Z", Icons.AutoMirrored.Filled.Sort) { byRecent = !byRecent }
-            })
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            item {
+                PlayButtons(ui, "liked", "Liked", liked, extra = {
+                    Pill(if (byRecent) "Newest" else "A–Z", Icons.AutoMirrored.Filled.Sort) { byRecent = !byRecent }
+                })
+            }
+            itemsIndexed(liked, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(liked, i) }) }
         }
-        itemsIndexed(liked, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(liked, i) }) }
     }
 }
 
@@ -351,37 +394,44 @@ fun QueueTab(ui: Ui, cat: Catalog) {
     val saved = remember(ui.version) { ui.library.savedQueues }
     val left = order.drop(at).sumOf { tracks.getOrNull(it)?.duration ?: 0.0 }
     var showSaved by remember { mutableStateOf(false) }
-    LazyColumn(state = listState) {
-        item(key = "header") {
-            Column {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (ids.isNotEmpty()) Text("${at + 1} / ${ids.size} · ${formatTime(left)} left", style = MaterialTheme.typography.bodySmall, color = Muted)
-                    Pill("Put aside", Icons.Default.Bookmark) { ui.putQueueAside() }
-                    Pill("Set aside · ${saved.size}", Icons.Default.Bookmarks, active = showSaved) { showSaved = !showSaved }
-                    Pill("Save as playlist", Icons.AutoMirrored.Filled.QueueMusic) { ui.saveQueueAsPlaylist() }
-                    Pill("Clear", Icons.Default.ClearAll) { ui.clearQueue() }
-                }
-                if (showSaved) {
-                    if (saved.isEmpty()) Text("No queues set aside", Modifier.padding(12.dp), color = Muted)
-                    saved.forEachIndexed { i, q ->
-                        ListRow(Icons.Default.Bookmark, q.name, "${q.index + 1} / ${q.ids.size}", trailing = { SmallIcon(Icons.Default.Close) { ui.deleteSaved(i) } }) {
-                            showSaved = false; ui.resumeSaved(i)
-                        }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val shown = if (fq.isEmpty()) order else order.filter { tracks.getOrNull(it)?.searchKey?.contains(fq) == true }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn(state = listState) {
+            item(key = "header") {
+                Column {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (ids.isNotEmpty()) Text("${at + 1} / ${ids.size} · ${formatTime(left)} left", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        Pill("Put aside", Icons.Default.Bookmark) { ui.putQueueAside() }
+                        Pill("Set aside · ${saved.size}", Icons.Default.Bookmarks, active = showSaved) { showSaved = !showSaved }
+                        Pill("Save as playlist", Icons.AutoMirrored.Filled.QueueMusic) { ui.saveQueueAsPlaylist() }
+                        Pill("Clear", Icons.Default.ClearAll) { ui.clearQueue() }
                     }
-                    HorizontalDivider(color = Gray2)
+                    if (showSaved) {
+                        if (saved.isEmpty()) Text("No queues set aside", Modifier.padding(12.dp), color = Muted)
+                        saved.forEachIndexed { i, s ->
+                            ListRow(Icons.Default.Bookmark, s.name, "${s.index + 1} / ${s.ids.size}", trailing = { SmallIcon(Icons.Default.Close) { ui.deleteSaved(i) } }) {
+                                showSaved = false; ui.resumeSaved(i)
+                            }
+                        }
+                        HorizontalDivider(color = Gray2)
+                    }
+                    if (ids.isEmpty()) Text("The queue is empty. Play an album or a track.", Modifier.padding(16.dp), color = Muted)
                 }
-                if (ids.isEmpty()) Text("The queue is empty. Play an album or a track.", Modifier.padding(16.dp), color = Muted)
             }
-        }
-        items(order, key = { keys[it] }) { i ->
-            val t = tracks[i]
-            ReorderableItem(reorder, key = keys[i], enabled = !ui.shuffle) {
-                if (t == null) return@ReorderableItem
-                TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
-                    dragHandle = if (ui.shuffle) null else ({ DragHandle(Modifier.draggableHandle()) }))
+            items(shown, key = { keys[it] }) { i ->
+                val t = tracks[i]
+                val drag = !ui.shuffle && fq.isEmpty()
+                ReorderableItem(reorder, key = keys[i], enabled = drag) {
+                    if (t == null) return@ReorderableItem
+                    TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
+                        dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null)
+                }
             }
         }
     }
@@ -400,44 +450,49 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
         }
     }
     val total = downloaded?.sumOf { (_, t) -> t.distinctBy { it.path }.sumOf { it.size } } ?: 0
-    LazyColumn {
-        item {
-            Text(
-                "Downloaded: ${formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
-                Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium,
-            )
-            if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) {
-                Pill("Cancel all", Icons.Default.Cancel) { WorkManager.getInstance(ui.context).cancelAllWorkByTag(DownloadWorker.TAG) }
-            }
-        }
-        if (active.isNotEmpty()) item { SectionTitle("In progress") }
-        items(active, key = { it.id }) { w ->
-            val title = w.progress.getString("title") ?: "Queued"
-            val done = w.progress.getInt("done", 0); val all = w.progress.getInt("total", 0)
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Row {
-                    Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (w.state == WorkInfo.State.ENQUEUED) "waiting for network" else "$done / $all", color = Muted, style = MaterialTheme.typography.bodySmall)
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            item {
+                Text(
+                    "Downloaded: ${formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
+                    Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium,
+                )
+                if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) {
+                    Pill("Cancel all", Icons.Default.Cancel) { WorkManager.getInstance(ui.context).cancelAllWorkByTag(DownloadWorker.TAG) }
                 }
-                LinearProgressIndicator({ if (all > 0) done / all.toFloat() else 0f }, Modifier.fillMaxWidth().padding(top = 4.dp))
             }
-        }
-        item { SectionTitle("On this phone") }
-        val list = downloaded
-        if (list == null) item { Text("Counting…", Modifier.padding(12.dp), color = Muted) }
-        else if (list.isEmpty()) item { Text("Nothing downloaded yet", Modifier.padding(12.dp), color = Muted) }
-        else items(list, key = { it.first.id }) { (a, t) ->
-            Row(
-                Modifier.fillMaxWidth().clickable { ui.open(Screen.AlbumView(a)) }.padding(start = 12.dp).height(56.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Cover(ui, a.cover, 40.dp)
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text(a.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${a.artist} · ${t.size} of ${a.tracks.size} · ${formatSize(t.distinctBy { it.path }.sumOf { it.size })}",
-                        style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1)
+            if (active.isNotEmpty()) item { SectionTitle("In progress") }
+            items(active, key = { it.id }) { w ->
+                val title = w.progress.getString("title") ?: "Queued"
+                val done = w.progress.getInt("done", 0); val all = w.progress.getInt("total", 0)
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Row {
+                        Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (w.state == WorkInfo.State.ENQUEUED) "waiting for network" else "$done / $all", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    LinearProgressIndicator({ if (all > 0) done / all.toFloat() else 0f }, Modifier.fillMaxWidth().padding(top = 4.dp))
                 }
-                SmallIcon(Icons.Default.Delete) { ui.deleteDownloads(t) }
+            }
+            item { SectionTitle("On this phone") }
+            val list = downloaded?.filter { fq in it.first.searchKey }
+            if (list == null) item { Text("Counting…", Modifier.padding(12.dp), color = Muted) }
+            else if (list.isEmpty()) item { Text("Nothing downloaded yet", Modifier.padding(12.dp), color = Muted) }
+            else items(list, key = { it.first.id }) { (a, t) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { ui.open(Screen.AlbumView(a)) }.padding(start = 12.dp).height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Cover(ui, a.cover, 40.dp)
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text(a.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${a.artist} · ${t.size} of ${a.tracks.size} · ${formatSize(t.distinctBy { it.path }.sumOf { it.size })}",
+                            style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1)
+                    }
+                    SmallIcon(Icons.Default.Delete) { ui.deleteDownloads(t) }
+                }
             }
         }
     }

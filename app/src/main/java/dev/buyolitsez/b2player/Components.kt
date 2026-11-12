@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -24,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,6 +63,19 @@ fun Pill(text: String, icon: ImageVector? = null, active: Boolean = false, onCli
         if (icon != null) { Icon(icon, null, Modifier.size(16.dp), tint = c); Spacer(Modifier.width(4.dp)) }
         Text(text, style = MaterialTheme.typography.labelLarge, color = c)
     }
+}
+
+/** Search field above a list; the screen filters its own list with [searchFold] of the text. */
+@Composable
+fun FilterField(value: String, onChange: (String) -> Unit) {
+    val focusManager = LocalFocusManager.current
+    OutlinedTextField(
+        value, onChange, Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), singleLine = true,
+        placeholder = { Text("Search") }, leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = { if (value.isNotEmpty()) SmallIcon(Icons.Default.Close) { onChange("") } },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+    )
 }
 
 @Composable
