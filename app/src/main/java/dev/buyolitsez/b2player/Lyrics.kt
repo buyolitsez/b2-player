@@ -2,6 +2,8 @@ package dev.buyolitsez.b2player
 
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -17,9 +19,10 @@ data class Lyrics(val synced: List<LyricLine>?, val plain: String?, val source: 
 }
 
 /**
- * Lyrics for a track: synced lyrics from lrclib.net when allowed, otherwise the text from the
- * file's tags (published by the catalog as lyrics/<album-id>.json), otherwise plain lrclib text.
- * Results, including "nothing found", are cached in filesDir/lyrics.
+ * Lyrics for a track: the text from the file's tags (published by the catalog as
+ * lyrics/<album-id>.json); lrclib.net only when the tags have no synced lyrics and online
+ * lyrics are on. What lrclib adds is uploaded to found-lyrics/ so that tools/fetch-lyrics.py
+ * writes it into the file. Results, including "nothing found", are cached in filesDir/lyrics.
  */
 @UnstableApi
 class LyricsRepo(private val app: App) {
@@ -31,17 +34,25 @@ class LyricsRepo(private val app: App) {
         if (cacheFile.exists()) runCatching { return fromJson(JSONObject(cacheFile.readText())) }
 
         val tag = if (t.hasLyrics) runCatching { tagLyrics(t) }.onFailure { AppLog.w("lyrics", "Tag lyrics failed for ${t.id}", it) }.getOrNull() else null
-        val remote = if (online) runCatching { lrclib(t) }.onFailure { AppLog.w("lyrics", "lrclib failed for ${t.id}", it) }.getOrNull() else null
+        val remote = if (online && tag?.synced == null) runCatching { lrclib(t) }.onFailure { AppLog.w("lyrics", "lrclib failed for ${t.id}", it) }.getOrNull() else null
         val result = when {
             remote?.synced?.isNotEmpty() == true -> remote
             tag != null -> tag
             remote != null && !remote.empty -> remote
             else -> Lyrics(null, null, "none")
         }
+        if (result === remote && t.start == null) app.scope.launch(Dispatchers.IO) { saveFound(t, result) }
         // Don't cache network failures, only real answers.
         if (!online || remote != null || tag != null) cacheFile.writeText(toJson(result).toString())
         return result
     }
+
+    /** found-lyrics/<hash of path>.json: {"path", "lyrics"} with LRC or plain text. Needs a key with writeFiles. */
+    private fun saveFound(t: Track, l: Lyrics) = runCatching {
+        val text = l.synced?.joinToString("\n") { "[%02d:%02d.%02d]%s".format(it.ms / 60_000, it.ms / 1000 % 60, it.ms / 10 % 100, it.text) } ?: l.plain
+        val body = JSONObject().put("path", t.path).put("artist", t.artist).put("title", t.title).put("lyrics", text)
+        app.b2.upload("found-lyrics/${hash(t.path)}.json", body.toString(1).toByteArray(), "application/json")
+    }.onFailure { AppLog.w("lyrics", "Saving found lyrics failed for ${t.id}", it) }
 
     private fun tagLyrics(t: Track): Lyrics? {
         val f = File(app.cacheDir, "lyrics-${t.album.id}.json")
