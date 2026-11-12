@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -162,7 +163,7 @@ fun TrackMenu(ui: Ui, t: Track, queueIndex: Int? = null, extra: (@Composable Col
     Box {
         SmallIcon(Icons.Default.MoreVert) { open = true }
         DropdownMenu(open, close, containerColor = Gray2) {
-            MenuItem("Play next", Icons.AutoMirrored.Filled.PlaylistAdd, close) { ui.playNext(listOf(t)) }
+            MenuItem("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, close) { ui.playNext(listOf(t)) }
             if (queueIndex == null) MenuItem("Add to queue", Icons.AutoMirrored.Filled.QueueMusic, close) { ui.addToEnd(listOf(t)) }
             else MenuItem("Remove from queue", Icons.Default.RemoveCircleOutline, close) { ui.removeFromQueue(queueIndex) }
             MenuItem(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle, close) { ui.stopAfter(t) }
@@ -171,9 +172,11 @@ fun TrackMenu(ui: Ui, t: Track, queueIndex: Int? = null, extra: (@Composable Col
             if (ui.downloaded(t)) MenuItem("Remove download", Icons.Default.Delete, close) { ui.deleteDownloads(listOf(t)) }
             else MenuItem("Download", Icons.Default.Download, close) { ui.download(t.id, t.title, listOf(t)) }
             extra?.invoke(this, close)
-            MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
-            MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
-            MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
+            // Hide the links to the screen that is already open.
+            val here = ui.stack().last()
+            if (here != Screen.AlbumView(t.album)) MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Albums) }
+            if (here != Screen.ArtistView(t.album.artist)) MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) }
+            if (here != Screen.FolderView(t.album.dir)) MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Folders) }
             MenuItem("Track info", Icons.Default.Info, close) { ui.trackInfo = t }
         }
     }

@@ -115,12 +115,16 @@ fun SearchTab(ui: Ui, cat: Catalog) {
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     // Filtering 18k tracks runs off the main thread; the previous results stay until the new ones are ready.
-    val found by produceState(emptyList<Album>() to emptyList<Track>(), cat, fq, ui.offlineOnly, ui.offlineIds) {
-        value = if (fq.length < 2) emptyList<Album>() to emptyList() else withContext(Dispatchers.Default) {
-            cat.albums.filter { fq in it.searchKey } to cat.tracks.filter { fq in it.searchKey && ui.visible(it) }.take(200)
+    val found by produceState(Triple(emptyList<Pair<String, List<Album>>>(), emptyList<Album>(), emptyList<Track>()), cat, fq, ui.offlineOnly, ui.offlineIds) {
+        value = if (fq.length < 2) Triple(emptyList(), emptyList(), emptyList()) else withContext(Dispatchers.Default) {
+            Triple(cat.artists.filter { fq in searchFold(it.first) }, cat.albums.filter { fq in it.searchKey }, cat.tracks.filter { fq in it.searchKey && ui.visible(it) })
         }
     }
-    val (albums, tracks) = found
+    val (artists, albums, allTracks) = found
+    val tracks = remember(allTracks) { allTracks.take(200) }
+    @Composable fun more(n: Int, what: String) {
+        if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
+    }
     Column {
         OutlinedTextField(
             ui.query, { ui.query = it }, Modifier.fillMaxWidth().padding(10.dp).focusRequester(focus), singleLine = true,
@@ -131,13 +135,20 @@ fun SearchTab(ui: Ui, cat: Catalog) {
         )
         LazyColumn {
             if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(16.dp), color = Muted) }
-            else if (q.length >= 2 && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(16.dp), color = Muted) }
+            else if (q.length >= 2 && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(16.dp), color = Muted) }
+            if (artists.isNotEmpty()) item { SectionTitle("Artists") }
+            items(artists.take(10), key = { "r" + it.first }) { (name, albums) ->
+                ListRow(Icons.Default.Person, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name), Tab.Artists) }
+            }
+            item { more(artists.size - 10, "artists") }
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
             items(albums.take(30), key = { "a" + it.id }) { AlbumRow(ui, it) }
+            item { more(albums.size - 30, "albums") }
             if (tracks.isNotEmpty()) item { SectionTitle("Tracks") }
             itemsIndexed(tracks, key = { _, t -> "t" + t.id }) { i, t ->
                 TrackRow(ui, t, showCover = true, onClick = { focusManager.clearFocus(); ui.play(tracks, i) })
             }
+            item { more(allTracks.size - tracks.size, "tracks") }
         }
     }
 }
@@ -151,13 +162,13 @@ fun PlayButtons(ui: Ui, key: String, title: String, tracks: List<Track>, extra: 
         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(if (tracks.size == 1) "1 track" else "${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
         Pill("Play", Icons.Default.PlayArrow, active = true) { ui.play(tracks, 0) }
         Pill("Shuffle", Icons.Default.Shuffle) { ui.play(tracks, 0, shuffled = true) }
         if (allDownloaded) Pill("Downloaded", Icons.Default.DownloadDone) { ui.deleteDownloads(tracks) }
         else Pill("Download", Icons.Default.Download) { ui.download(key, title, tracks) }
         Pill("Queue", Icons.AutoMirrored.Filled.QueueMusic) { ui.addToEnd(tracks) }
         extra?.invoke()
-        Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
     }
 }
 
@@ -210,7 +221,7 @@ fun PlaylistsTab(ui: Ui, cat: Catalog, importM3u: () -> Unit) {
                     Pill("Import .m3u", Icons.Default.FileOpen) { importM3u() }
                 }
                 ListRow(Icons.Default.Favorite, "Liked", "$likedCount tracks") { ui.open(Screen.LikedView) }
-                ListRow(Icons.Default.History, "History and stats", "${ui.app.history.all().size} plays") { ui.open(Screen.HistoryView) }
+                ListRow(Icons.Default.History, "History and stats", plays(ui.app.history.all().size)) { ui.open(Screen.HistoryView) }
                 ListRow(Icons.Default.NewReleases, "Recently added", "Albums, newest first") {
                     ui.prefs.albumSortRecent.set(true); ui.stacks[Tab.Albums] = listOf(Screen.Root); ui.tab = Tab.Albums
                 }
@@ -357,7 +368,7 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
                 Period.entries.forEach { p -> Pill(p.label, active = p == period) { period = p } }
             }
             Text(
-                "${inPeriod.size} plays · ${formatTime(inPeriod.sumOf { cat.byId[it.trackId]?.duration ?: 0.0 })} listened",
+                "${plays(inPeriod.size)} · ${formatTime(inPeriod.sumOf { cat.byId[it.trackId]?.duration ?: 0.0 })} listened",
                 Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodyMedium,
             )
             if (plays.isEmpty()) Text("Nothing yet. A play counts after half the track or 4 minutes.", Modifier.padding(12.dp), color = Muted)
@@ -366,16 +377,18 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
         itemsIndexed(recent.take(10), key = { _, t -> "r" + t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(recent, i) }) }
         if (topTracks.isNotEmpty()) item { SectionTitle("Top tracks") }
         itemsIndexed(topTracks, key = { _, p -> "t" + p.first.id }) { i, (t, n) ->
-            TrackRow(ui, t, showCover = true, onClick = { ui.play(topTracks.map { it.first }, i) }, subtitle = "$n plays · ${t.artist}")
+            TrackRow(ui, t, showCover = true, onClick = { ui.play(topTracks.map { it.first }, i) }, subtitle = "${plays(n)} · ${t.artist}")
         }
         if (topArtists.isNotEmpty()) item { SectionTitle("Top artists") }
         items(topArtists, key = { "a" + it.key }) { (name, n) ->
-            ListRow(Icons.Default.Person, name, "$n plays") { ui.open(Screen.ArtistView(name), Tab.Artists) }
+            ListRow(Icons.Default.Person, name, plays(n)) { ui.open(Screen.ArtistView(name), Tab.Artists) }
         }
         if (forgotten.isNotEmpty()) item { SectionTitle("Haven't played in a while") }
         items(forgotten, key = { "f" + it.id }) { a -> AlbumRow(ui, a) }
     }
 }
+
+fun plays(n: Int) = if (n == 1) "1 play" else "$n plays"
 
 // ---------------- queue ----------------
 

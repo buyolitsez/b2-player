@@ -116,7 +116,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingsHeader("History")
         SettingSwitch("Keep listening history", "Used for stats; synced to the bucket", p.recordHistory)
         var confirmClear by remember { mutableStateOf(false) }
-        SettingAction("Clear history on this phone", "${app.history.all().size} plays. The copy in the bucket stays") { confirmClear = true }
+        SettingAction("Clear history on this phone", "${plays(app.history.all().size)}. The copy in the bucket stays") { confirmClear = true }
         if (confirmClear) AlertDialog(
             { confirmClear = false }, containerColor = Gray2, title = { Text("Clear local history?") },
             text = { Text("It comes back from the bucket on the next sync unless you delete state/history.tsv there.") },

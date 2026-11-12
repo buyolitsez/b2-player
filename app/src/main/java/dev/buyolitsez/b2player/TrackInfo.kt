@@ -125,7 +125,8 @@ fun TrackInfoDialog(ui: Ui) {
         }
     }
 
-    AlertDialog(close, containerColor = Gray2, title = { Text(if (edit != null) "Edit tags" else "Track info") },
+    // While editing, a tap outside or Back keeps the dialog open so unsaved edits are not lost.
+    AlertDialog({ if (edit == null) close() }, containerColor = Gray2, title = { Text(if (edit != null) "Edit tags" else "Track info") },
         confirmButton = {
             if (edit != null && loaded != null) TextButton({ save(loaded, edit) }, enabled = !saving) { Text("Save") }
             else TextButton(close) { Text("OK") }
@@ -135,7 +136,7 @@ fun TrackInfoDialog(ui: Ui) {
             else if (loaded != null) TextButton({ editing = loaded.shown.toList().toMutableStateList() }) { Text("Edit") }
         },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.verticalScroll(key(edit != null) { rememberScrollState() })) {
                 val small = MaterialTheme.typography.bodySmall
                 if (edit != null) {
                     Text("Empty a field to remove the tag", style = small, color = Muted)
