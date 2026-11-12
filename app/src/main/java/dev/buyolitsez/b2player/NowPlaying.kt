@@ -168,27 +168,42 @@ fun MiniPlayer(ui: Ui, cat: Catalog?) {
     val t = ui.currentId?.let { cat?.byId?.get(it) } ?: return
     val c = ui.controller
     var drag by remember { mutableFloatStateOf(0f) }
-    Row(
-        Modifier.fillMaxWidth().background(Gray1)
-            .pointerInput(c) {
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        if (drag < -120) c?.seekToNextMediaItem() else if (drag > 120) c?.seekToPreviousMediaItem()
-                        drag = 0f
-                    },
-                    onDragCancel = { drag = 0f },
-                ) { _, dx -> drag += dx }
+    Column(Modifier.fillMaxWidth().background(Gray1)) {
+        if (c != null) MiniProgress(c, t)
+        Row(
+            Modifier.fillMaxWidth()
+                .pointerInput(c) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (drag < -120) c?.seekToNextMediaItem() else if (drag > 120) c?.seekToPreviousMediaItem()
+                            drag = 0f
+                        },
+                        onDragCancel = { drag = 0f },
+                    ) { _, dx -> drag += dx }
+                }
+                .clickable { ui.selectTab(Tab.Now) }.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Cover(ui, t.album.cover, 40.dp)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
             }
-            .clickable { ui.selectTab(Tab.Now) }.padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Cover(ui, t.album.cover, 40.dp)
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
+            SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                if (ui.liked(t)) MaterialTheme.colorScheme.primary else Color.White) { ui.toggleLike(t) }
+            SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, Color.White) { c?.run { if (ui.playing) pause() else resume() } }
         }
-        SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-            if (ui.liked(t)) MaterialTheme.colorScheme.primary else Color.White) { ui.toggleLike(t) }
-        SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, Color.White) { c?.run { if (ui.playing) pause() else resume() } }
     }
+}
+
+// Thin playback progress line on top of the mini player; polls on its own so the rest doesn't recompose.
+@Composable
+private fun MiniProgress(c: Player, t: Track) {
+    var pos by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(250) } }
+    val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
+    LinearProgressIndicator(
+        { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp),
+        trackColor = Color.Transparent, gapSize = 0.dp, drawStopIndicator = {},
+    )
 }
