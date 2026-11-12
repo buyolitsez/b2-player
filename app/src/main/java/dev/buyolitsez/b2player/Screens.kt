@@ -21,6 +21,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,20 +40,45 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
     val recent = ui.prefs.albumSortRecent
+    val days = ui.prefs.recentDays
+    var periodMenu by remember { mutableStateOf(false) }
+    var customDays by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
-    val albums = remember(cat, recent.value, ui.offlineOnly, ui.offlineIds, fq) {
-        val list = cat.albums.filter { a -> fq in a.searchKey && (!ui.offlineOnly || a.tracks.any { ui.visible(it) }) }
+    val albums = remember(cat, recent.value, days.value, ui.offlineOnly, ui.offlineIds, fq) {
+        val since = if (recent.value && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
+        val list = cat.albums.filter { a -> fq in a.searchKey && a.added >= since && (!ui.offlineOnly || a.tracks.any { ui.visible(it) }) }
         if (recent.value) list.sortedByDescending { it.added } else list
     }
+    fun label(d: Int) = when (d) { 0 -> "All time"; 1 -> "1 day"; else -> "$d days" }
     Column {
         FilterField(q) { q = it }
         AlbumGrid(ui, albums, header = {
             Row(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill("By artist", active = !recent.value) { recent.set(false) }
                 Pill("Recently added", active = recent.value) { recent.set(true) }
+                if (recent.value) Box {
+                    Pill(label(days.value), Icons.Default.DateRange) { periodMenu = true }
+                    DropdownMenu(periodMenu, { periodMenu = false }, containerColor = Gray2) {
+                        listOf(1, 3, 7, 30, 365, 0).forEach { d -> DropdownMenuItem({ Text(label(d)) }, { periodMenu = false; days.set(d) }) }
+                        DropdownMenuItem({ Text("Custom…") }, { periodMenu = false; customDays = true })
+                    }
+                }
             }
         })
+    }
+    if (customDays) {
+        var text by remember { mutableStateOf("") }
+        val n = text.toIntOrNull()?.takeIf { it > 0 }
+        AlertDialog(
+            { customDays = false }, containerColor = Gray2, title = { Text("Added in the last") },
+            text = {
+                OutlinedTextField(text, { text = it.filter(Char::isDigit).take(5) }, singleLine = true, suffix = { Text("days") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            },
+            confirmButton = { TextButton({ days.set(n!!); customDays = false }, enabled = n != null) { Text("OK") } },
+            dismissButton = { TextButton({ customDays = false }) { Text("Cancel") } },
+        )
     }
 }
 
