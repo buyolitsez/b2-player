@@ -240,7 +240,7 @@ class Library(context: Context, private val cache: Cache) {
         return SavedQueue(o.optString("name"), (0 until ids.length()).map { ids.getString(it) }, o.getInt("index"), o.getLong("pos"))
     }
 
-    /** Queues put aside with "Отложить". */
+    /** Queues saved with "Save queue for later". */
     var savedQueues: List<SavedQueue>
         get() = JSONArray(prefs.getString("savedQueues", "[]")).let { a -> (0 until a.length()).map { queueFrom(a.getJSONObject(it)) } }
         set(list) = prefs.edit().putString("savedQueues", JSONArray(list.map { queueJson(it) }).toString()).apply()
