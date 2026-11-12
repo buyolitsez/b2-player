@@ -219,7 +219,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val name = first?.let { "${it.album.artist} — ${it.album.title}" } ?: "Queue"
         library.savedQueues = listOf(q.copy(name = name)) + library.savedQueues.take(9)
         version++
-        toast("Queue put aside")
+        toast("Queue saved for later")
     }
 
     fun resumeSaved(i: Int) {

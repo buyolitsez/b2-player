@@ -407,13 +407,13 @@ fun QueueTab(ui: Ui, cat: Catalog) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (ids.isNotEmpty()) Text("${at + 1} / ${ids.size} · ${formatTime(left)} left", style = MaterialTheme.typography.bodySmall, color = Muted)
-                        Pill("Put aside", Icons.Default.Bookmark) { ui.putQueueAside() }
-                        Pill("Set aside · ${saved.size}", Icons.Default.Bookmarks, active = showSaved) { showSaved = !showSaved }
+                        Pill("Save queue for later", Icons.Default.Bookmark) { ui.putQueueAside() }
+                        Pill("Saved queues · ${saved.size}", Icons.Default.Bookmarks, active = showSaved) { showSaved = !showSaved }
                         Pill("Save as playlist", Icons.AutoMirrored.Filled.QueueMusic) { ui.saveQueueAsPlaylist() }
                         Pill("Clear", Icons.Default.ClearAll) { ui.clearQueue() }
                     }
                     if (showSaved) {
-                        if (saved.isEmpty()) Text("No queues set aside", Modifier.padding(12.dp), color = Muted)
+                        if (saved.isEmpty()) Text("No saved queues", Modifier.padding(12.dp), color = Muted)
                         saved.forEachIndexed { i, s ->
                             ListRow(Icons.Default.Bookmark, s.name, "${s.index + 1} / ${s.ids.size}", trailing = { SmallIcon(Icons.Default.Close) { ui.deleteSaved(i) } }) {
                                 showSaved = false; ui.resumeSaved(i)
