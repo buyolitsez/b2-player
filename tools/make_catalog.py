@@ -283,6 +283,14 @@ def main():
     root = os.path.abspath(a.music)
     fav_ns, fav_tags = favourite_index(a.favourites)
     matched_fav_tags = set()
+
+    def fav(artist, title):
+        k = (artist or "").lower(), (title or "").lower()
+        if all(k) and k in fav_tags:
+            matched_fav_tags.add(k)
+            return True
+        return False
+
     albums = {}  # key -> dict
     bad_names = []
 
@@ -319,22 +327,19 @@ def main():
                 continue
             st = os.stat(p)
             lyr = None if f in cue_tracks else lyrics_of(p)
-            liked = (f, st.st_size) in fav_ns
-            if not liked and t["artist"] and t["title"]:
-                k = (t["artist"].lower(), t["title"].lower())
-                if k in fav_tags:
-                    liked = True
-                    matched_fav_tags.add(k)
+            # A favourite CUE image says nothing about which of its tracks were liked: match those by tags.
+            liked = f not in cue_tracks and ((f, st.st_size) in fav_ns or fav(t["artist"], t["title"]))
             entries = []
             if f in cue_tracks:
                 c_album, c_perf, _, ctr = cue_tracks[f]
                 for i, ct in enumerate(ctr):
                     end = ctr[i + 1]["start"] if i + 1 < len(ctr) else t["duration"]
+                    artist = ct["performer"] or c_perf or t["artist"]
                     entries.append({
                         "path": rel, "title": ct["title"] or f"Track {ct['track']}",
-                        "artist": ct["performer"] or c_perf or t["artist"], "albumartist": c_perf or t["albumartist"],
+                        "artist": artist, "albumartist": c_perf or t["albumartist"],
                         "album": c_album or t["album"], "track": ct["track"], "disc": None, "year": t["year"],
-                        "start": ct["start"], "duration": round(end - ct["start"], 3), "liked": liked,
+                        "start": ct["start"], "duration": round(end - ct["start"], 3), "liked": fav(artist, ct["title"]),
                         "size": st.st_size, "mtime": int(st.st_mtime),
                     })
             else:

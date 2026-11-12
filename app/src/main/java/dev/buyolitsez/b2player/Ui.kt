@@ -257,7 +257,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             DownloadWorker.enqueue(context, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
                 one?.title ?: "${changed.size} liked tracks", changed, wifiOnly = prefs.autoWifiOnly.value)
         }
-        if (!liked && prefs.deleteOnUnlike.value) changed.forEach { library.deleteDownload(it) }
+        if (!liked && prefs.deleteOnUnlike.value) {
+            // CUE tracks share a file: keep it while another of its tracks is still liked.
+            changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }
+                .distinctBy { it.path }.forEach { library.deleteDownload(it) }
+        }
         version++
         syncInBackground { library.syncLikes(app.b2) }
     }
@@ -266,7 +270,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val todo = tracks.filter { !library.isDownloaded(it) }
         if (todo.isEmpty()) { toast("Already downloaded"); return }
         DownloadWorker.enqueue(context, name, title, todo, wifiOnly = prefs.manualWifiOnly.value)
-        toast("Downloading ${todo.size} tracks, ${formatSize(todo.sumOf { it.size })}")
+        toast("Downloading ${todo.size} tracks, ${formatSize(todo.distinctBy { it.path }.sumOf { it.size })}")
     }
 
     fun deleteDownloads(tracks: List<Track>) {
