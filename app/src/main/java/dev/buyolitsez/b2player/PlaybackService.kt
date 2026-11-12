@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -13,6 +14,7 @@ import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -109,7 +111,21 @@ class PlaybackService : MediaSessionService() {
             }
         })
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        session = MediaSession.Builder(this, player)
+        // A new queue or shuffle turned on: the current track goes first in the shuffle order.
+        val sessionPlayer = object : ForwardingPlayer(player) {
+            override fun setMediaItems(items: MutableList<MediaItem>) { super.setMediaItems(items); shuffleFromCurrent(player) }
+            override fun setMediaItems(items: MutableList<MediaItem>, resetPosition: Boolean) {
+                super.setMediaItems(items, resetPosition); shuffleFromCurrent(player)
+            }
+            override fun setMediaItems(items: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long) {
+                super.setMediaItems(items, startIndex, startPositionMs); shuffleFromCurrent(player)
+            }
+            override fun setShuffleModeEnabled(enabled: Boolean) {
+                if (enabled) shuffleFromCurrent(player)
+                super.setShuffleModeEnabled(enabled)
+            }
+        }
+        session = MediaSession.Builder(this, sessionPlayer)
             .setSessionActivity(open)
             .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(app.dataSourceFactory).build()))
             .setCallback(object : MediaSession.Callback {
@@ -206,7 +222,17 @@ class PlaybackService : MediaSessionService() {
             // Not prepared here: the service is recreated on every app start, and preparing would load
             // the track (and its neighbours) each time. Play prepares it (MediaSession does that).
             player.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
+            shuffleFromCurrent(player)
         }
+    }
+
+    /** Shuffle order that starts with the current track, the rest in random order. */
+    private fun shuffleFromCurrent(player: ExoPlayer) {
+        val n = player.mediaItemCount
+        if (n == 0) return
+        val first = player.currentMediaItemIndex.coerceIn(0, n - 1)
+        val order = intArrayOf(first) + (0 until n).filter { it != first }.shuffled().toIntArray()
+        player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order, System.nanoTime()))
     }
 
     /** Debounced: remembers the queue and position so it survives app restarts. */
