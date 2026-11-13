@@ -127,6 +127,7 @@ class LyricsRepo(private val app: App) {
             .build()
         val client = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
         val message = try { client.messages().create(params) } finally { client.close() }
+        AppLog.i("lyrics", "Translation of ${t.id}, " + Assistant.usage(message.usage()))
         val reply = message.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n")
         val byNumber = reply.lines().mapNotNull { NUMBERED.matchEntire(it.trim()) }
             .associate { it.groupValues[1].toInt() - 1 to it.groupValues[2].trim() }
