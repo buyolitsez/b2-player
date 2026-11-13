@@ -1,5 +1,6 @@
 package dev.buyolitsez.b2player
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,14 +56,46 @@ fun SmallIcon(icon: ImageVector, tint: Color = MaterialTheme.colorScheme.onSurfa
     }
 }
 
+/** Download progress of [tracks] (by size; downloaded ones count as done), or null when none of them is queued. */
+@UnstableApi
 @Composable
-fun Pill(text: String, icon: ImageVector? = null, active: Boolean = false, onClick: () -> Unit) {
+fun downloadProgress(ui: Ui, tracks: List<Track>): Float? {
+    val queued by DownloadWorker.progress.collectAsState()
+    val files = tracks.distinctBy { it.path }
+    if (files.none { it.path in queued }) return null
+    val done = files.sumOf { t -> t.size * (queued[t.path] ?: if (ui.library.isDownloaded(t)) 1f else 0f).toDouble() }
+    return (done / files.sumOf { it.size }.coerceAtLeast(1)).toFloat()
+}
+
+/** A ring that fills with [progress] around a download arrow. */
+@Composable
+fun DownloadRing(progress: Float, size: Dp, color: Color) {
+    val shown by animateFloatAsState(progress, label = "download")
+    Box(Modifier.size(size), Alignment.Center) {
+        CircularProgressIndicator({ shown }, Modifier.fillMaxSize(), color = color, strokeWidth = size / 10, trackColor = color.copy(alpha = 0.25f), gapSize = 0.dp)
+        Icon(Icons.Default.ArrowDownward, null, Modifier.size(size * 0.55f), tint = color)
+    }
+}
+
+/** Small mark in track rows: a ring while the track downloads, a check once it is on the phone. */
+@UnstableApi
+@Composable
+fun DownloadMark(ui: Ui, t: Track) {
+    val p = downloadProgress(ui, listOf(t))
+    if (p != null) Box(Modifier.padding(start = 6.dp)) { DownloadRing(p, 14.dp, Muted) }
+    else if (ui.downloaded(t)) Icon(Icons.Default.DownloadDone, null, Modifier.padding(start = 6.dp).size(14.dp), tint = Muted)
+}
+
+/** With [progress], a download ring stands in place of the icon. */
+@Composable
+fun Pill(text: String, icon: ImageVector? = null, active: Boolean = false, progress: Float? = null, onClick: () -> Unit) {
     val c = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(Gray2).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) { Icon(icon, null, Modifier.size(16.dp), tint = c); Spacer(Modifier.width(4.dp)) }
+        if (progress != null) { DownloadRing(progress, 16.dp, c); Spacer(Modifier.width(4.dp)) }
+        else if (icon != null) { Icon(icon, null, Modifier.size(16.dp), tint = c); Spacer(Modifier.width(4.dp)) }
         Text(text, style = MaterialTheme.typography.labelLarge, color = c)
     }
 }
@@ -118,7 +151,7 @@ fun TrackRow(
                 )
             }
             Text(formatTime(t.duration), style = MaterialTheme.typography.bodySmall, color = Muted)
-            if (ui.downloaded(t)) Icon(Icons.Default.DownloadDone, null, Modifier.padding(start = 6.dp).size(14.dp), tint = Muted)
+            DownloadMark(ui, t)
             if (ui.liked(t)) Icon(Icons.Default.Favorite, null, Modifier.padding(start = 6.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
             TrackMenu(ui, t, queueIndex, extraMenu)
         }
