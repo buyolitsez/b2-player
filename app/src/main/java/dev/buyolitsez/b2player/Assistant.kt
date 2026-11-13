@@ -51,6 +51,7 @@ import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.Tool
 import com.anthropic.models.messages.ToolResultBlockParam
+import com.anthropic.models.messages.Usage
 import com.anthropic.models.messages.WebSearchTool20260209
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -146,7 +147,8 @@ class Assistant(private val ui: Ui) {
                 .model(MODEL)
                 .maxTokens(16000L)
                 .system(system)
-                .cacheControl(CacheControlEphemeral.builder().build())
+                // An hour, not the default 5 minutes: messages to a music player come minutes apart, and a miss rewrites the whole chat.
+                .cacheControl(CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.TTL_1H).build())
                 .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.MEDIUM).build())
                 .apply { TOOLS.forEach { addTool(it) } }
                 .addTool(WebSearchTool20260209.builder().maxUses(3L).build())
@@ -157,6 +159,7 @@ class Assistant(private val ui: Ui) {
                 .build()
             // Async, so that Stop doesn't wait for the response.
             val response = c.async().messages().create(params).await()
+            AppLog.i("assistant", usage(response.usage()))
             messages.add(response.toParam())
             response.content().mapNotNull { it.text().orElse(null)?.text()?.trim() }.filter { it.isNotEmpty() }
                 .forEach { entries.add(ChatEntry.Reply(it)) }
@@ -192,6 +195,10 @@ class Assistant(private val ui: Ui) {
 
     companion object {
         const val MODEL = "claude-sonnet-5-5"
+
+        /** Token counts of a response for the log, to see what a request costs and whether the cache works. */
+        fun usage(u: Usage) = "tokens: in ${u.inputTokens()}, cache read ${u.cacheReadInputTokens().orElse(0)}, " +
+            "cache write ${u.cacheCreationInputTokens().orElse(0)}, out ${u.outputTokens()}"
 
         private val TOOLS = AssistantTools.DEFINITIONS.map { (name, description, schema) ->
             val node = jsonMapper().readTree(schema)
