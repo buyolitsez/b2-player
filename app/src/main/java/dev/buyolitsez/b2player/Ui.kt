@@ -265,6 +265,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         }
         version++
         syncInBackground { library.syncLikes(app.b2) }
+        if (app.lastFm.connected) scope.launch(Dispatchers.IO) {
+            changed.forEach { t -> runCatching { app.lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
+        }
     }
 
     fun download(name: String, title: String, tracks: List<Track>) {
