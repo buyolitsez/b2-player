@@ -126,18 +126,21 @@ class LyricsRepo(private val app: App) {
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
             .build()
         val client = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
-        val reply = try {
-            client.messages().create(params).content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n")
-        } finally { client.close() }
+        val message = try { client.messages().create(params) } finally { client.close() }
+        val reply = message.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n")
         val byNumber = reply.lines().mapNotNull { NUMBERED.matchEntire(it.trim()) }
             .associate { it.groupValues[1].toInt() - 1 to it.groupValues[2].trim() }
+        if (byNumber.isEmpty()) {
+            AppLog.w("lyrics", "Unexpected translation reply (${message.stopReason().orElse(null)}): ${reply.take(500)}")
+            error("unexpected reply")
+        }
         val out = lines.indices.map { i -> if (lines[i].isBlank()) "" else byNumber[i] ?: "" }
         cacheFile.writeText(JSONArray(out).toString())
         return out
     }
 
     companion object {
-        private val NUMBERED = Regex("""(\d+)[\t.:|)]\s*(.*)""")
+        private val NUMBERED = Regex("""(\d+)(?:[\t.:|)]\s*(.*))?""")
 
         private val TRANSLATE = """
             You translate song lyrics into LANGUAGE for a listener who reads the translation next to the original, line by line.
@@ -145,7 +148,7 @@ class LyricsRepo(private val app: App) {
             imagery and mood, idioms, slang, wordplay and references) rather than translating lines word by word on their own.
             Keep the tone; don't rhyme or pad. Never merge, split, skip or reorder lines, even when a sentence runs over several
             lines: then translate each part so that the pieces read in order. A line that is already in LANGUAGE, or is only
-            sounds like "oh-oh" or "la-la", stays as it is.
+            sounds like "oh-oh" or "la-la", gets an empty translation: reply with just its number.
             The lines come numbered as "number<TAB>text". Reply with exactly one line per input line in the same form,
             "number<TAB>translation", and nothing else.
         """.trimIndent()

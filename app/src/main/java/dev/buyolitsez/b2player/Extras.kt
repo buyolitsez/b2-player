@@ -50,12 +50,13 @@ fun LyricsPanel(ui: Ui, t: Track, modifier: Modifier, toggle: () -> Unit) {
         }
     }
     val tr = translation
-    val translated = tr?.getOrNull()?.takeIf { language != null }
+    val translated = tr?.getOrNull()?.takeIf { language != null && it.any(String::isNotEmpty) }
     val note = when {
         language == null -> null
         ui.assistant.apiKey.isEmpty() -> "Add a Claude API key in Settings to translate"
         tr == null -> "Translating into $language…"
         tr.isFailure -> "Translation failed: ${tr.exceptionOrNull()?.message}"
+        translated == null -> "The lyrics are already in $language"
         else -> null
     }
     Box(modifier) {
