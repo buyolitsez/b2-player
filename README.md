@@ -1,115 +1,118 @@
 # b2-player
 
-Музыкальный плеер для Android, который играет вашу собственную библиотеку из бакета Backblaze B2.
-Музыка лежит в бакете обычными файлами (оригиналы, без перекодирования и шифрования), плеер
-стримит её напрямую из B2. Своего сервера нет: телефон ходит в B2 сам, а каталог, обложки и тексты
-заранее собирает скрипт на компьютере, где хранится библиотека.
+An Android music player for your own library stored in a Backblaze B2 bucket. The music sits in the
+bucket as plain files (originals, no transcoding or encryption) and the player streams it straight
+from B2. There is no server: the phone talks to B2 itself, and the catalog, covers and lyrics are
+prepared in advance by a script on the computer that holds the library.
 
 ```
 <bucket>/
-  music/<как в папке с музыкой>  оригиналы: FLAC, MP3, M4A (ALAC), ...
-  catalog.json.gz          каталог из тегов
-  covers/<album-id>.jpg    обложки 512 px
-  lyrics/<album-id>.json   тексты из тегов
-  state/likes.json         лайки (отличия от отметок каталога)
-  state/playlists.json     плейлисты
-  state/history.tsv        история прослушиваний: время и id трека
-  state/tags.json          правки тегов с телефона, ещё не записанные в файлы
-  logs/<дата>.log          лог телефона после ошибок
+  music/<same as the music folder>  originals: FLAC, MP3, M4A (ALAC), ...
+  catalog.json.gz          catalog built from tags
+  covers/<album-id>.jpg    512 px covers
+  lyrics/<album-id>.json   lyrics from tags
+  state/likes.json         likes (differences from the catalog's flags)
+  state/playlists.json     playlists
+  state/history.tsv        listening history: time and track id
+  state/tags.json          tag edits made on the phone, not yet written to files
+  logs/<date>.log          phone log after errors
 ```
 
-Если включить в B2 lifecycle «Keep all versions», бакет заодно служит бэкапом музыки: старые версии
-файлов B2 хранит сам.
+With the B2 lifecycle rule "Keep all versions" the bucket doubles as a music backup: B2 keeps old
+versions of every file.
 
-## Компьютер с библиотекой: заливка и каталог
+## Library computer: upload and catalog
 
-Нужны rclone с remote на бакет (ключ Read and Write, например `rclone config create b2music b2 account … key …`),
-`python-mutagen` и `python-pillow`. Скрипты берут пути из переменных окружения:
+You need rclone with a remote for the bucket (a Read and Write key, e.g.
+`rclone config create b2music b2 account … key …`), `python-mutagen` and `python-pillow`.
+The scripts take their paths from environment variables:
 
-| Переменная | Что это |
+| Variable | Meaning |
 |---|---|
-| `B2_PLAYER_REMOTE` | бакет в rclone, например `b2music:my-music` |
-| `B2_PLAYER_MUSIC` | папка с музыкой, по умолчанию `~/Music` |
-| `B2_PLAYER_OUT` | куда класть сборку каталога и отчёты, по умолчанию `~/.cache/b2-player` |
+| `B2_PLAYER_REMOTE` | the bucket in rclone, e.g. `b2music:my-music` |
+| `B2_PLAYER_MUSIC` | the music folder, `~/Music` by default |
+| `B2_PLAYER_OUT` | where catalog builds and reports go, `~/.cache/b2-player` by default |
 
 ```bash
-tools/sync-music.sh --dry-run          # что изменится
-tools/sync-music.sh                    # полная синхронизация папки с музыкой -> music/
-tools/sync-music.sh -- "rock/Artist"   # только эти подпапки
-tools/publish-catalog.sh               # каталог + обложки, затем проверка, что все пути есть в бакете
-tools/apply-tags.py                    # правки тегов с телефона: что изменится в файлах
-tools/apply-tags.py --apply            # записать их в файлы и убрать записанное из state/tags.json
+tools/sync-music.sh --dry-run          # show what would change
+tools/sync-music.sh                    # full sync of the music folder -> music/
+tools/sync-music.sh -- "rock/Artist"   # only these subfolders
+tools/publish-catalog.sh               # catalog + covers, then check that every path exists in the bucket
+tools/apply-tags.py                    # tag edits from the phone: what would change in the files
+tools/apply-tags.py --apply            # write them to the files and drop them from state/tags.json
 ```
 
-`sync-music.sh` не стартует, пока на машине идёт бэкап restic, чтобы не делить с ним диск и сеть;
-`WAIT_FOR_RESTIC=1` заставляет его подождать.
+`sync-music.sh` does not start while a restic backup is running on the machine, so the two don't
+compete for disk and network; `WAIT_FOR_RESTIC=1` makes it wait instead.
 
-Правка тегов: «Track info» в меню трека → Edit. Телефон кладёт правки в `state/tags.json`
-(`{"tracks": {"<путь>": {"GENRE": "…"}}}`, пустое значение удаляет тег) и показывает их поверх тегов
-файла. `apply-tags.py --apply` пишет их в файлы через mutagen и печатает команду
-`sync-music.sh -- <папки> && publish-catalog.sh`. Когда в каталоге меняется размер файла, телефон
-выбрасывает его старую копию из кэша стрима.
+Tag editing: "Track info" in a track's menu → Edit. The phone puts edits into `state/tags.json`
+(`{"tracks": {"<path>": {"GENRE": "…"}}}`, an empty value removes the tag) and shows them over the
+file's own tags. `apply-tags.py --apply` writes them to the files with mutagen and prints the command
+`sync-music.sh -- <folders> && publish-catalog.sh`. When a file's size changes in the catalog, the
+phone drops its old copy from the stream cache.
 
 `make_catalog.py`:
-- группирует треки в альбомы по папкам (`CD1`/`Disc 2` объединяются с родителем), внутри папки — по тегу album;
-- чинит теги cp1251, записанные как latin1;
-- разбивает рипы «один файл + CUE» на треки (`start` + `duration`, в плеере — clipping);
-- обложка — файл cover/folder/front в папке, иначе первая картинка, иначе встроенная;
-- если есть папка `--favourites` (по умолчанию `~/Favourite Music`), помечает как лайкнутые треки, которые
-  есть и в ней, а не найденные пишет в `unmatched-favourites.txt`. Удобно, если любимое раньше копировалось
-  в отдельную папку; в бакет она не заливается.
+- groups tracks into albums by folder (`CD1`/`Disc 2` merge into the parent), and within a folder by the album tag;
+- fixes cp1251 tags that were written as latin1;
+- splits "one file + CUE" rips into tracks (`start` + `duration`, clipped in the player);
+- the cover is a cover/folder/front file in the folder, otherwise the first image, otherwise the embedded one;
+- if the `--favourites` folder exists (`~/Favourite Music` by default), marks tracks that are also in it
+  as liked and writes the ones it can't match to `unmatched-favourites.txt`. Handy if favourites used to be
+  copied into a separate folder; that folder is not uploaded.
 
-## Телефон
+## Phone
 
-Интерфейс на английском. Kotlin + Jetpack Compose + Media3 (ExoPlayer, `MediaSessionService` для фона и уведомления).
-ALAC и прочее, что не умеет платформа, декодирует `org.jellyfin.media3:media3-ffmpeg-decoder`.
+Kotlin + Jetpack Compose + Media3 (ExoPlayer, `MediaSessionService` for background playback and the notification).
+ALAC and anything else the platform can't decode goes through `org.jellyfin.media3:media3-ffmpeg-decoder`.
 
-- Доступ к B2: `b2_authorize_account` (native API), потом GET `…/file/<bucket>/<key>` с токеном.
-- Кэш стрима: SimpleCache 4 ГБ, LRU; ключ кэша — `b2://` URI, не зависит от токена.
-- Офлайн: «Офлайн» на альбоме или «Скачать» в «Любимых» скачивает файлы целиком (WorkManager).
-- Лайки хранятся в бакете в `state/likes.json` как отличия от отметок каталога (`added`/`removed`).
-  Каждое нажатие сердечка сразу заливается; при запуске приложение забирает файл из бакета, если на
-  телефоне нет незалитых изменений. Для этого ключу телефона нужно право записи.
+- B2 access: `b2_authorize_account` (native API), then GET `…/file/<bucket>/<key>` with the token.
+- Stream cache: 4 GB SimpleCache, LRU; the cache key is a `b2://` URI, independent of the token.
+- Offline: "Offline" on an album or "Download" in Liked downloads whole files (WorkManager).
+- Likes live in the bucket in `state/likes.json` as differences from the catalog's flags (`added`/`removed`).
+  Every tap on the heart is uploaded right away; on start the app pulls the file from the bucket unless the
+  phone has changes that aren't uploaded yet. That's why the phone's key needs write access.
 
-- Плейлисты, импорт `.m3u` (например, из Musicolet): треки ищутся по имени файла и папке, затем по `#EXTINF` «исполнитель - название».
-- Прослушивание засчитывается после половины трека или 4 минут (треки короче 30 с не считаются); это же правило
-  для истории и скробблинга в Last.fm; лайки и их снятие уходят в Last.fm как love/unlove. Ключ Last.fm API и логин вводятся в настройках, пароль не сохраняется.
+- Playlists, `.m3u` import (e.g. from Musicolet): tracks are matched by file name and folder, then by `#EXTINF` "artist - title".
+- A play counts after half the track or 4 minutes (tracks shorter than 30 s don't count); the same rule applies
+  to history and Last.fm scrobbling; likes and unlikes go to Last.fm as love/unlove. The Last.fm API key and
+  login are entered in settings, the password is not stored.
 
-- Ассистент (кнопка ✦ в верхней панели): чат с Claude, текстом или голосом. Ключ Claude API вводится в настройках,
-  запросы идут с телефона прямо в API. Ищет и включает музыку, отвечает по истории прослушиваний; изменения
-  лайков и плейлистов применяются только после «Apply». Разговор живёт до закрытия приложения.
+- Assistant (the ✦ button in the top bar): a chat with Claude, by text or voice. The Claude API key is entered in
+  settings and requests go from the phone straight to the API. It finds and plays music and answers questions
+  about listening history; changes to likes and playlists apply only after "Apply". The conversation lasts
+  until the app is closed.
 
-- Тексты: из тегов файлов (каталог кладёт их в `lyrics/<album-id>.json`). На lrclib.net приложение идёт, только если
-  в тегах нет синхронного текста, и найденное кладёт в `found-lyrics/` в бакете. `tools/fetch-lyrics.py`
-  ищет синхронные тексты на lrclib.net для всей библиотеки (сначала треки без текста, потом с текстом без времени)
-  и с `--apply` пишет их в теги вместе с найденным телефоном; без флага только ищет и пишет отчёт
-  `lyrics-report.txt` в `B2_PLAYER_OUT`. Прерванный запуск продолжается с того же места. Потом
-  `tools/sync-music.sh && tools/publish-catalog.sh`.
-  Кнопка перевода в тексте: Claude (ключ ассистента) переводит песню на английский или русский построчно,
-  перевод стоит справа от оригинала. Кэш по треку и языку в `files/lyrics-translations`.
-- Логи: `files/logs/app.log` в приложении, ротация по 512 КБ, всего не больше ~1,5 МБ. После ошибок
-  копируются в бакет в `logs/<дата>.log` (хранится одна версия на день). Посмотреть:
-  `rclone cat <remote>:<bucket>/logs/<дата>.log` или
-  `adb logcat -s 'B2P/*'` (те же строки пишутся в logcat; `run-as` работает только с debug-сборкой).
+- Lyrics: from file tags (the catalog puts them in `lyrics/<album-id>.json`). The app goes to lrclib.net only when
+  the tags have no synced lyrics, and saves what it finds to `found-lyrics/` in the bucket. `tools/fetch-lyrics.py`
+  looks up synced lyrics on lrclib.net for the whole library (tracks without lyrics first, then ones with unsynced
+  lyrics) and with `--apply` writes them into the tags together with what the phone found; without the flag it
+  only searches and writes a `lyrics-report.txt` report to `B2_PLAYER_OUT`. An interrupted run resumes where it
+  stopped. Afterwards run `tools/sync-music.sh && tools/publish-catalog.sh`.
+  The translate button in lyrics: Claude (with the assistant's key) translates the song line by line into English
+  or Russian, shown next to the original. Cached per track and language in `files/lyrics-translations`.
+- Logs: `files/logs/app.log` in the app, rotated at 512 KB, ~1.5 MB at most. After errors they are copied
+  to the bucket as `logs/<date>.log` (one version per day). To read them:
+  `rclone cat <remote>:<bucket>/logs/<date>.log` or
+  `adb logcat -s 'B2P/*'` (the same lines go to logcat; `run-as` only works with a debug build).
 
-## Установка
+## Install
 
-Готовый APK для arm64 (Android 10+) есть в [Releases](../../releases/latest). При первом запуске ввести в
-настройках keyID и applicationKey ключа B2 и имя бакета. Ключу нужно право Read and Write, чтобы
-синхронизировались лайки, плейлисты и история.
+A ready arm64 APK (Android 10+) is in [Releases](../../releases/latest). On first launch, enter the B2 key's
+keyID and applicationKey and the bucket name in settings. The key needs Read and Write access so that likes,
+playlists and history can sync.
 
-Сборка (JDK 21, Android SDK):
+Build (JDK 21, Android SDK):
 
 ```bash
 ./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Ставить release-сборку: debug-сборка в несколько раз медленнее (каталог читается ≈1 с вместо
-≈0,16 с, запуск ≈470 мс вместо ≈200 мс). Обе подписаны debug-ключом, поэтому переход между ними
-сохраняет данные.
+Install the release build: the debug build is several times slower (catalog parsing ≈1 s instead of
+≈0.16 s, startup ≈470 ms instead of ≈200 ms). Both are signed with the debug key, so switching between
+them keeps the app's data.
 
-Версия — `baseVersion.N` (например 0.5.35), где N — число коммитов в `HEAD`, оно же versionCode. Каждый push в main
-выкладывает релиз `vX.Y.N` в GitHub Releases. CI подписывает его debug-ключом из секрета `DEBUG_KEYSTORE`
-(keystore в base64), чтобы релизы вставали поверх локальных сборок. `baseVersion` в `app/build.gradle.kts`
-поднимать при выпуске заметных возможностей. Локальная сборка с ветки, где коммитов больше, чем потом окажется
-в main, не даст поставить следующий релиз поверх, пока main её не догонит.
+The version is `baseVersion.N` (e.g. 0.5.35), where N is the number of commits in `HEAD` and also the versionCode.
+Every push to main publishes a `vX.Y.N` release on GitHub Releases. CI signs it with the debug key from the
+`DEBUG_KEYSTORE` secret (the keystore in base64), so releases install over local builds. Bump `baseVersion` in
+`app/build.gradle.kts` when shipping notable features. A local build from a branch with more commits than main gets a higher versionCode,
+so the next release won't install over it until main catches up.
