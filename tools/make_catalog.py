@@ -3,7 +3,7 @@
 
 Reads tags from the music library (FLAC, MP3, M4A/ALAC, ...), groups tracks
 into albums by folder, splits single-file CUE rips into tracks, marks tracks
-that also exist in the old "Favourite Music" folder as liked, and writes:
+that also exist in the favourites folder (--favourites) as liked, and writes:
 
   OUT/catalog.json.gz   the catalog the app downloads
   OUT/covers/<id>.jpg   512px album thumbnails
