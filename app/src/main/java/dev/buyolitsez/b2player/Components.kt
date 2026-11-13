@@ -261,13 +261,13 @@ fun AlbumRow(ui: Ui, a: Album, subtitle: String? = null) {
 }
 
 @Composable
-fun ListRow(icon: ImageVector, title: String, subtitle: String?, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+fun ListRow(icon: ImageVector?, title: String, subtitle: String?, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp).height(52.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = Muted)
-        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+        if (icon != null) Icon(icon, null, Modifier.size(22.dp), tint = Muted)
+        Column(Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
