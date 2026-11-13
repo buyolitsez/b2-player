@@ -60,6 +60,8 @@ class Prefs(context: Context) {
     val startTab = Str("startTab", "Albums")
     val swipeActions = Bool("swipeActions", true)
     val coverTint = Bool("coverTint", true)
+    /** "System", "Light" or "Dark". */
+    val theme = Str("theme", "System")
     // History
     val recordHistory = Bool("recordHistory", true)
     // Lyrics, controls, diagnostics
