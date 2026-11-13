@@ -149,12 +149,27 @@ class B2(private val context: Context) {
         }
     }
 
-    fun download(key: String, dst: File) {
+    /** [onProgress] gets the share of the file written so far, 0..1. */
+    fun download(key: String, dst: File, onProgress: (Float) -> Unit = {}) {
         dst.parentFile?.mkdirs()
         // Own temp name per call: two downloads of the same file (a cover shown twice) must not collide.
         val tmp = File(dst.parentFile, "${dst.name}.${java.util.UUID.randomUUID()}.part")
         try {
-            open(key).inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            val c = open(key)
+            val total = c.contentLengthLong
+            c.inputStream.use { input ->
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(64 shl 10)
+                    var written = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        written += n
+                        if (total > 0) onProgress(written.toFloat() / total)
+                    }
+                }
+            }
             if (!tmp.renameTo(dst) && !dst.exists()) throw IOException("rename failed: $dst")
         } finally {
             tmp.delete()

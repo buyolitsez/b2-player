@@ -55,7 +55,9 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, if (ui.liked(t)) accent else MaterialTheme.colorScheme.onSurface) { ui.toggleLike(t) }
-            if (ui.downloaded(t)) SmallIcon(Icons.Default.DownloadDone, accent) { ui.deleteDownloads(listOf(t)) }
+            val dl = downloadProgress(ui, listOf(t))
+            if (dl != null) Box(Modifier.size(36.dp).clip(CircleShape).clickable { ui.open(Screen.Downloads) }, Alignment.Center) { DownloadRing(dl, 22.dp, accent) }
+            else if (ui.downloaded(t)) SmallIcon(Icons.Default.DownloadDone, accent) { ui.deleteDownloads(listOf(t)) }
             else SmallIcon(Icons.Default.Download, MaterialTheme.colorScheme.onSurface) { ui.download(t.id, t.title, listOf(t)) }
             SmallIcon(Icons.Default.Shuffle, if (ui.shuffle) accent else MaterialTheme.colorScheme.onSurface) { c.shuffleModeEnabled = !ui.shuffle }
             SmallIcon(

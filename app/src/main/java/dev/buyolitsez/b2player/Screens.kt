@@ -218,7 +218,8 @@ fun SearchTab(ui: Ui, cat: Catalog) {
 @UnstableApi
 @Composable
 fun PlayButtons(ui: Ui, key: String, title: String, tracks: List<Track>, extra: (@Composable () -> Unit)? = null) {
-    val allDownloaded = remember(tracks, ui.version) { tracks.isNotEmpty() && tracks.all { ui.library.isDownloaded(it) } }
+    val dl = downloadProgress(ui, tracks)
+    val allDownloaded = remember(tracks, ui.version, dl == null) { tracks.isNotEmpty() && tracks.all { ui.library.isDownloaded(it) } }
     Row(
         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -226,7 +227,8 @@ fun PlayButtons(ui: Ui, key: String, title: String, tracks: List<Track>, extra: 
         Text(if (tracks.size == 1) "1 track" else "${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
         Pill("Play", Icons.Default.PlayArrow, active = true) { ui.play(tracks, 0) }
         Pill("Shuffle", Icons.Default.Shuffle) { ui.play(tracks, 0, shuffled = true) }
-        if (allDownloaded) Pill("Downloaded", Icons.Default.DownloadDone) { ui.deleteDownloads(tracks) }
+        if (dl != null) Pill("${(dl * 100).toInt()}%", progress = dl) { ui.open(Screen.Downloads) }
+        else if (allDownloaded) Pill("Downloaded", Icons.Default.DownloadDone) { ui.deleteDownloads(tracks) }
         else Pill("Download", Icons.Default.Download) { ui.download(key, title, tracks) }
         Pill("Queue", Icons.AutoMirrored.Filled.QueueMusic) { ui.addToEnd(tracks) }
         extra?.invoke()
@@ -544,7 +546,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
                     Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium,
                 )
                 if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) {
-                    Pill("Cancel all", Icons.Default.Cancel) { WorkManager.getInstance(ui.context).cancelAllWorkByTag(DownloadWorker.TAG) }
+                    Pill("Cancel all", Icons.Default.Cancel) { DownloadWorker.cancelAll(ui.context) }
                 }
             }
             if (active.isNotEmpty()) item { SectionTitle("In progress") }
