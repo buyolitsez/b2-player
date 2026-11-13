@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upload the music library as plain files to the B2 bucket used by the player.
 #
-#   tools/sync-music.sh                 # full sync of ~/Music -> b2music:buyolitsez-music/music
+#   tools/sync-music.sh                 # full sync of $B2_PLAYER_MUSIC (~/Music) -> $B2_PLAYER_REMOTE/music
 #   tools/sync-music.sh --dry-run       # show what would change
 #   WAIT_FOR_RESTIC=1 tools/sync-music.sh   # wait until the restic backup finishes, then sync
 #   tools/sync-music.sh -- "rock/Pink Floyd/1973 - ..."   # copy only these subfolders (tests)
