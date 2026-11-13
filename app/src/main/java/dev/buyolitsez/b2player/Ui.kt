@@ -56,7 +56,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var query by mutableStateOf("")
     /** Bumped when likes, playlists or downloads change, so lists re-read them. */
     var version by mutableIntStateOf(0)
-    var colors by mutableStateOf(DefaultColors)
+    var colors by mutableStateOf(defaultColors(true))
     /** Tracks waiting for the "Add to playlist" dialog. */
     var addToPlaylist by mutableStateOf<List<Track>?>(null)
     /** Track shown in the "Track info" dialog. */

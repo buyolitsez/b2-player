@@ -100,7 +100,7 @@ fun TrackRow(
     val active = if (queueIndex != null) queueIndex == ui.currentIndex else t.id == ui.currentId
     val row = @Composable {
         Row(
-            Modifier.fillMaxWidth().background(if (active) Color(0xFF0D1A12) else Color.Black)
+            Modifier.fillMaxWidth().background(if (active) ActiveRow else MaterialTheme.colorScheme.background)
                 .clickable(onClick = onClick).padding(start = if (dragHandle != null) 0.dp else 12.dp).height(52.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -150,7 +150,7 @@ fun TrackRow(
             else -> "Add to queue"
         }
         Box(
-            Modifier.fillMaxSize().background(Color(0xFF0F2A1C)).padding(horizontal = 16.dp),
+            Modifier.fillMaxSize().background(SwipeRow).padding(horizontal = 16.dp),
             if (toRight) Alignment.CenterStart else Alignment.CenterEnd,
         ) { Text(label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge) }
     }) { row() }
