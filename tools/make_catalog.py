@@ -10,7 +10,9 @@ that also exist in the favourites folder (--favourites) as liked, and writes:
   OUT/unmatched-favourites.txt  favourites with no match in the library
 
 Paths in the catalog are relative to the library root; in the bucket they
-live under music/.
+live under music/. With --previous and --bucket-files, tracks of the previous
+catalog that were deleted from the library but are still in the bucket stay
+in the catalog, so the library can keep only part of the music.
 """
 import argparse
 import collections
@@ -274,11 +276,47 @@ def favourite_index(fav_root):
     return by_name_size, by_tag
 
 
+def keep_bucket_only(out_albums, root, previous, bucket_files, lyrics_dir, old_lyrics):
+    """Add the tracks of the previous catalog whose file is no longer in the
+    library but is still in the bucket."""
+    with gzip.open(previous, "rt", encoding="utf-8") as fh:
+        prev = json.load(fh)
+    with open(bucket_files, encoding="utf-8") as fh:
+        in_bucket = set(fh.read().splitlines())
+    by_id = {al["id"]: al for al in out_albums}
+    kept = 0
+    for pal in prev["albums"]:
+        tracks = [t for t in pal["tracks"]
+                  if t["path"] in in_bucket and not os.path.exists(os.path.join(root, t["path"]))]
+        if not tracks:
+            continue
+        kept += len(tracks)
+        al = by_id.get(pal["id"])
+        if al is None:
+            # the whole album is only in the bucket: its cover and lyrics are there from before
+            out_albums.append({**pal, "tracks": tracks})
+            continue
+        al["tracks"] += tracks
+        al["tracks"].sort(key=lambda x: (x.get("disc") or 1, x.get("track") or 9999, x.get("start") or 0, x["path"]))
+        lyrics = {t["path"]: old_lyrics[al["id"]][t["path"]] for t in tracks
+                  if t.get("ly") and t["path"] in old_lyrics.get(al["id"], {})}
+        if lyrics:
+            lyr_file = os.path.join(lyrics_dir, al["id"] + ".json")
+            if os.path.exists(lyr_file):
+                with open(lyr_file, encoding="utf-8") as fh:
+                    lyrics.update(json.load(fh))
+            with open(lyr_file, "w", encoding="utf-8") as fh:
+                json.dump(lyrics, fh, ensure_ascii=False)
+    print(f"kept from the bucket: {kept} tracks")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--music", default=os.path.expanduser("~/Music"))
     ap.add_argument("--favourites", default=os.path.expanduser("~/Favourite Music"))
     ap.add_argument("--out", default=os.path.expanduser("~/.cache/b2-player"))
+    ap.add_argument("--previous", help="the catalog.json.gz published before")
+    ap.add_argument("--bucket-files", help="file list of music/ in the bucket (rclone lsf -R --files-only)")
     ap.add_argument("only", nargs="*", help="limit to these subfolders of --music (for tests)")
     a = ap.parse_args()
 
@@ -361,6 +399,7 @@ def main():
     covers_dir = os.path.join(a.out, "covers")
     os.makedirs(covers_dir, exist_ok=True)
     out_albums = []
+    old_lyrics = {}
     for al in albums.values():
         tr = al["tracks"]
         aid = album_id(al["key"])
@@ -399,6 +438,9 @@ def main():
                 lyrics[x["path"]] = x["lyrics"]
             tracks.append(o)
         lyr_file = os.path.join(lyrics_dir, aid + ".json")
+        if os.path.exists(lyr_file):
+            with open(lyr_file, encoding="utf-8") as fh:
+                old_lyrics[aid] = json.load(fh)
         if lyrics:
             with open(lyr_file, "w", encoding="utf-8") as fh:
                 json.dump(lyrics, fh, ensure_ascii=False)
@@ -412,6 +454,8 @@ def main():
             o["genre"] = genre
         out_albums.append(o)
 
+    if a.previous and a.bucket_files and not a.only:
+        keep_bucket_only(out_albums, root, a.previous, a.bucket_files, lyrics_dir, old_lyrics)
     out_albums.sort(key=lambda x: (x["artist"].lower(), x["year"] or 0, x["title"].lower()))
     catalog = {"version": 1, "generated": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
                "musicPrefix": "music/", "albums": out_albums}

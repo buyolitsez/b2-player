@@ -35,7 +35,7 @@ The scripts take their paths from environment variables:
 
 ```bash
 tools/sync-music.sh --dry-run          # show what would change
-tools/sync-music.sh                    # full sync of the music folder -> music/
+tools/sync-music.sh                    # upload new and changed files of the music folder -> music/
 tools/sync-music.sh -- "rock/Artist"   # only these subfolders
 tools/publish-catalog.sh               # catalog + covers, then check that every path exists in the bucket
 tools/apply-tags.py                    # tag edits from the phone: what would change in the files
@@ -44,6 +44,11 @@ tools/apply-tags.py --apply            # write them to the files and drop them f
 
 `sync-music.sh` does not start while a restic backup is running on the machine, so the two don't
 compete for disk and network; `WAIT_FOR_RESTIC=1` makes it wait instead.
+
+The music folder may keep only part of the music: `sync-music.sh` never deletes from the bucket, and
+`publish-catalog.sh` keeps the tracks that are still in the bucket in the catalog (with their old tags,
+likes and lyrics). To remove an album from the bucket, or the old folder after a rename, use
+`rclone purge "$B2_PLAYER_REMOTE/music/<folder>"`. Tag edits and `fetch-lyrics.py` only reach local files.
 
 Tag editing: "Track info" in a track's menu → Edit. The phone puts edits into `state/tags.json`
 (`{"tracks": {"<path>": {"GENRE": "…"}}}`, an empty value removes the tag) and shows them over the
