@@ -76,15 +76,19 @@ def tracks(only):
 
 
 def get_json(url):
-    """Parsed body, None for 404; network trouble raises so the track is retried next run."""
+    """Parsed body, None for 404; waits out 429s; other trouble raises so the track is retried next run."""
     req = urllib.request.Request(url, headers={"User-Agent": "b2-player-tools (github.com/buyolitsez/b2-player)"})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        raise
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            if e.code != 429 or attempt == 5:
+                raise
+            retry = e.headers.get("Retry-After", "")
+            time.sleep(int(retry) if retry.isdigit() else 5 * 2 ** attempt)
 
 
 def lookup(t):
