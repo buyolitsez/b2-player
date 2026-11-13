@@ -135,7 +135,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         is Screen.FolderView -> screen.path.substringAfterLast('/')
                         is Screen.PlaylistView -> ui.app.playlists.get(screen.id)?.name ?: "Playlist"
                         Screen.LikedView -> "Liked"
-                        Screen.HistoryView -> "History"
+                        Screen.HistoryView -> "History and stats"
                         Screen.Downloads -> "Downloads"
                         Screen.EqualizerView -> "Equalizer"
                         Screen.Settings -> "Settings"

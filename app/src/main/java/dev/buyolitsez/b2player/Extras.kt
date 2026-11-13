@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Translate
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -155,38 +157,58 @@ fun EqualizerScreen(ui: Ui) {
 fun SleepTimerDialog(ui: Ui, dismiss: () -> Unit) {
     val app = ui.app
     val t = ui.currentId?.let { app.catalog.value?.byId?.get(it) }
-    fun set(minutes: Int) {
-        app.sleepAt.value = System.currentTimeMillis() + minutes * 60_000L; app.sleepAfterAlbum.value = null
-        ui.toast("Will pause in $minutes min"); dismiss()
+    // null: the main list; otherwise the "After N minutes" or "After N tracks" picker.
+    var picker by remember { mutableStateOf<String?>(null) }
+    var custom by remember(picker) { mutableStateOf("") }
+    fun set(toast: String, apply: () -> Unit) {
+        app.sleepAt.value = null; app.sleepAfterAlbum.value = null; app.sleepAfterTracks.value = null; app.stopAfterId.value = null
+        apply(); ui.toast(toast); dismiss()
     }
+    fun minutes(m: Int) = set("Will pause in $m min") { app.sleepAt.value = System.currentTimeMillis() + m * 60_000L }
+    fun tracks(n: Int) = set(if (n == 0) "Will pause after this track" else "Will pause after ${moreTracks(n)}") { app.sleepAfterTracks.value = n }
+    @Composable fun Option(text: String, onClick: () -> Unit) =
+        Text(text, Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp))
     AlertDialog(
-        dismiss, containerColor = Gray2, title = { Text("Sleep timer") },
+        dismiss, containerColor = Gray2,
+        title = { Text(when (picker) { "minutes" -> "Pause after minutes"; "tracks" -> "Pause after tracks"; else -> "Sleep timer" }) },
         text = {
             Column {
-                listOf(10, 15, 30, 45, 60, 90).forEach { m ->
-                    Text("$m minutes", Modifier.fillMaxWidth().clickable { set(m) }.padding(vertical = 10.dp))
+                when (picker) {
+                    null -> {
+                        Option("After N minutes…") { picker = "minutes" }
+                        Option("After N tracks…") { picker = "tracks" }
+                        if (t != null) {
+                            Option("End of this track") { set("Will pause after “${t.title}”") { app.stopAfterId.value = t.id } }
+                            Option("End of this album") { set("Will pause after “${t.album.title}”") { app.sleepAfterAlbum.value = t.album.id } }
+                        }
+                    }
+                    "minutes" -> listOf(10, 15, 30, 45, 60, 90).forEach { m -> Option("$m minutes") { minutes(m) } }
+                    else -> {
+                        Option("0 · after this track") { tracks(0) }
+                        Option("1 · after the next one") { tracks(1) }
+                        listOf(3, 5).forEach { n -> Option(moreTracks(n)) { tracks(n) } }
+                    }
                 }
-                if (t != null) {
-                    Text("End of this track", Modifier.fillMaxWidth().clickable {
-                        app.sleepAt.value = null; app.sleepAfterAlbum.value = null; app.stopAfterId.value = t.id
-                        ui.toast("Will pause after “${t.title}”"); dismiss()
-                    }.padding(vertical = 10.dp))
-                    Text("End of this album", Modifier.fillMaxWidth().clickable {
-                        app.sleepAt.value = null; app.sleepAfterAlbum.value = t.album.id
-                        ui.toast("Will pause after “${t.album.title}”"); dismiss()
-                    }.padding(vertical = 10.dp))
+                if (picker != null) {
+                    val n = custom.toIntOrNull()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(custom, { custom = it.filter(Char::isDigit).take(4) }, Modifier.weight(1f), singleLine = true,
+                            label = { Text("Custom") }, suffix = { Text(if (picker == "minutes") "min" else "tracks") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        TextButton({ if (picker == "minutes") minutes(n!!) else tracks(n!!) }, enabled = n != null && (n > 0 || picker == "tracks")) { Text("Set") }
+                    }
                 }
             }
         },
         confirmButton = {
-            if (app.sleepAt.value != null || app.sleepAfterAlbum.value != null || app.stopAfterId.value != null) TextButton({
-                app.sleepAt.value = null; app.sleepAfterAlbum.value = null; app.stopAfterId.value = null
-                ui.toast("Sleep timer off"); dismiss()
-            }) { Text("Turn off") }
+            if (picker == null && (app.sleepAt.value != null || app.sleepAfterAlbum.value != null || app.sleepAfterTracks.value != null || app.stopAfterId.value != null))
+                TextButton({ set("Sleep timer off") {} }) { Text("Turn off") }
         },
-        dismissButton = { TextButton(dismiss) { Text("Close") } },
+        dismissButton = { TextButton({ if (picker != null) picker = null else dismiss() }) { Text(if (picker != null) "Back" else "Close") } },
     )
 }
+
+private fun moreTracks(n: Int) = if (n == 1) "1 more track" else "$n more tracks"
 
 /** "Pausing in 12:30" / "Pausing after this album", or null when no timer is set. */
 @UnstableApi
@@ -195,11 +217,14 @@ fun sleepLabel(ui: Ui): String? {
     val at by ui.app.sleepAt.collectAsState()
     val album by ui.app.sleepAfterAlbum.collectAsState()
     val stopAfter by ui.app.stopAfterId.collectAsState()
+    val tracks by ui.app.sleepAfterTracks.collectAsState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(at) { while (at != null) { now = System.currentTimeMillis(); delay(1000) } }
     return when {
         at != null -> "Pausing in ${formatTime(((at!! - now) / 1000.0).coerceAtLeast(0.0))}"
         album != null -> "Pausing after this album"
+        tracks == 0 -> "Pausing after this track"
+        tracks != null -> "Pausing after ${moreTracks(tracks!!)}"
         stopAfter != null && stopAfter == ui.currentId -> "Pausing after this track"
         else -> null
     }

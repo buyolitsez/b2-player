@@ -375,11 +375,11 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
     val inPeriod = remember(plays, period) { plays.filter { it.time >= since } }
     val recent = remember(plays) { plays.asReversed().map { it.trackId }.distinct().take(30).mapNotNull { cat.byId[it] } }
     val topTracks = remember(inPeriod) {
-        inPeriod.groupingBy { it.trackId }.eachCount().entries.sortedByDescending { it.value }.take(25)
+        inPeriod.groupingBy { it.trackId }.eachCount().entries.sortedByDescending { it.value }.take(10)
             .mapNotNull { (id, n) -> cat.byId[id]?.let { it to n } }
     }
     val topArtists = remember(inPeriod) {
-        inPeriod.mapNotNull { cat.byId[it.trackId]?.album?.artist }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(15)
+        inPeriod.mapNotNull { cat.byId[it.trackId]?.album?.artist }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(10)
     }
     val forgotten = remember(plays) {
         val halfYear = System.currentTimeMillis() - 180 * 86_400_000L
@@ -399,8 +399,6 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
             )
             if (plays.isEmpty()) Text("Nothing yet. A play counts after half the track or 4 minutes.", Modifier.padding(12.dp), color = Muted)
         }
-        if (recent.isNotEmpty()) item { SectionTitle("Recently played") }
-        itemsIndexed(recent.take(10), key = { _, t -> "r" + t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(recent, i) }) }
         if (topTracks.isNotEmpty()) item { SectionTitle("Top tracks") }
         itemsIndexed(topTracks, key = { _, p -> "t" + p.first.id }) { i, (t, n) ->
             TrackRow(ui, t, showCover = true, onClick = { ui.play(topTracks.map { it.first }, i) }, subtitle = "${plays(n)} · ${t.artist}")
@@ -411,6 +409,8 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
         }
         if (forgotten.isNotEmpty()) item { SectionTitle("Haven't played in a while") }
         items(forgotten, key = { "f" + it.id }) { a -> AlbumRow(ui, a) }
+        if (recent.isNotEmpty()) item { SectionTitle("Recently played") }
+        itemsIndexed(recent.take(10), key = { _, t -> "r" + t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(recent, i) }) }
     }
 }
 
