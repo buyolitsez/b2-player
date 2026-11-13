@@ -70,6 +70,11 @@ class PlaybackService : MediaSessionService() {
                     player.pause(); app.stopAfterId.value = null
                     AppLog.i("player", "Stopped after $lastId as asked")
                 }
+                val tracks = app.sleepAfterTracks.value
+                if (finished && tracks != null) {
+                    app.sleepAfterTracks.value = if (tracks > 0) tracks - 1 else null
+                    if (tracks == 0) { player.pause(); AppLog.i("player", "Sleep timer: tracks finished") }
+                }
                 val album = app.sleepAfterAlbum.value
                 if (album != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && track(item)?.album?.id != album) {
                     player.pause(); app.sleepAfterAlbum.value = null

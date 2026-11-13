@@ -53,7 +53,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
             val missing = remember(cat, ui.version) { cat.tracks.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) } }
             SettingAction(
                 "Download all liked now",
-                if (missing.isEmpty()) "Everything liked is on the phone" else "${missing.size} tracks, ${formatSize(missing.sumOf { it.size })}",
+                if (missing.isEmpty()) "Everything liked is on the phone" else "${missing.size} tracks, ${formatSize(missing.distinctBy { it.path }.sumOf { it.size })}",
             ) {
                 if (missing.isNotEmpty()) {
                     DownloadWorker.enqueue(ui.context, "liked-all", "Liked", missing, wifiOnly = p.autoWifiOnly.value)

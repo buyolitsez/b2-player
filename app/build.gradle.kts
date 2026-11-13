@@ -1,3 +1,8 @@
+// Bump when shipping notable features. The third number is the commit count, see versionCode.
+val baseVersion = "0.5"
+// Commit count of HEAD: grows with every merge to main, same locally and in CI (checkout needs full history).
+val commitCount = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,8 +16,8 @@ android {
         applicationId = "dev.buyolitsez.b2player"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = commitCount
+        versionName = "$baseVersion.$commitCount"
         ndk { abiFilters += "arm64-v8a" }
     }
     // CI signs with the Mac's debug key from a file named by DEBUG_KEYSTORE_FILE, so the phone accepts updates.
