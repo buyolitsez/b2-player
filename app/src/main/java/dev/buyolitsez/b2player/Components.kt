@@ -93,14 +93,14 @@ fun MenuItem(text: String, icon: ImageVector, close: () -> Unit, action: () -> U
 @Composable
 fun TrackRow(
     ui: Ui, t: Track, showCover: Boolean, onClick: () -> Unit,
-    queueIndex: Int? = null, dragHandle: (@Composable () -> Unit)? = null,
+    queueIndex: Int? = null, dragHandle: (@Composable () -> Unit)? = null, dragModifier: Modifier = Modifier,
     subtitle: String? = null, extraMenu: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
     onSwipeLeft: (() -> Unit)? = null, swipeLeftLabel: String? = null,
 ) {
     val active = if (queueIndex != null) queueIndex == ui.currentIndex else t.id == ui.currentId
     val row = @Composable {
         Row(
-            Modifier.fillMaxWidth().background(if (active) ActiveRow else MaterialTheme.colorScheme.background)
+            Modifier.fillMaxWidth().then(dragModifier).background(if (active) ActiveRow else MaterialTheme.colorScheme.background)
                 .clickable(onClick = onClick).padding(start = if (dragHandle != null) 0.dp else 12.dp).height(52.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
