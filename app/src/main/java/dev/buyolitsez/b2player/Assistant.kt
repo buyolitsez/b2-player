@@ -147,7 +147,8 @@ class Assistant(private val ui: Ui) {
                 .model(MODEL)
                 .maxTokens(16000L)
                 .system(system)
-                .cacheControl(CacheControlEphemeral.builder().build())
+                // An hour, not the default 5 minutes: messages to a music player come minutes apart, and a miss rewrites the whole chat.
+                .cacheControl(CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.TTL_1H).build())
                 .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.MEDIUM).build())
                 .apply { TOOLS.forEach { addTool(it) } }
                 .addTool(WebSearchTool20260209.builder().maxUses(3L).build())
