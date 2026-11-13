@@ -62,6 +62,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** Track shown in the "Track info" dialog. */
     var trackInfo by mutableStateOf<Track?>(null)
 
+    init {
+        // Likes from here and from the media notification re-read the lists.
+        scope.launch { app.likesChanged.collect { version++ } }
+    }
+
     var controller by mutableStateOf<MediaController?>(null)
     var currentId by mutableStateOf<String?>(null)
     var currentIndex by mutableIntStateOf(0)
@@ -249,26 +254,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun toggleLike(t: Track) = setLiked(listOf(t), !library.isLiked(t))
 
-    fun setLiked(tracks: List<Track>, liked: Boolean) {
-        val changed = tracks.filter { library.isLiked(it) != liked }
-        if (changed.isEmpty()) return
-        changed.forEach { library.setLiked(it, liked) }
-        if (liked && prefs.autoDownloadLiked.value) {
-            val one = changed.singleOrNull()
-            DownloadWorker.enqueue(context, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
-                one?.title ?: "${changed.size} liked tracks", changed, wifiOnly = prefs.autoWifiOnly.value)
-        }
-        if (!liked && prefs.deleteOnUnlike.value) {
-            // CUE tracks share a file: keep it while another of its tracks is still liked.
-            changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }
-                .distinctBy { it.path }.forEach { library.deleteDownload(it) }
-        }
-        version++
-        syncInBackground { library.syncLikes(app.b2) }
-        if (app.lastFm.connected) scope.launch(Dispatchers.IO) {
-            changed.forEach { t -> runCatching { app.lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
-        }
-    }
+    fun setLiked(tracks: List<Track>, liked: Boolean) = app.setLiked(tracks, liked)
 
     fun download(name: String, title: String, tracks: List<Track>) {
         val todo = tracks.filter { !library.isDownloaded(it) }
