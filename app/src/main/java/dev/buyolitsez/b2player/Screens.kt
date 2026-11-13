@@ -19,7 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardActions
@@ -31,6 +33,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -344,6 +347,7 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
                     TrackRow(
                         ui, t, showCover = true, onClick = { ui.play(shownTracks, pos) },
                         dragHandle = if (fq.isEmpty()) ({ DragHandle(Modifier.draggableHandle()) }) else null,
+                        dragModifier = if (fq.isEmpty()) longPressDrag() else Modifier,
                         onSwipeLeft = { dropAt(i) }, swipeLeftLabel = "Remove from playlist",
                         extraMenu = { close -> MenuItem("Remove from playlist", Icons.Default.RemoveCircleOutline, close) { dropAt(i) } },
                     )
@@ -367,6 +371,13 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
 fun stableKeys(ids: List<String>): List<String> {
     val seen = HashMap<String, Int>()
     return ids.map { id -> val n = seen.merge(id, 1, Int::plus)!!; if (n == 1) id else "$id#$n" }
+}
+
+/** Long press anywhere on a row picks it up for dragging, with a buzz so it is clear the row is held. */
+@Composable
+fun ReorderableCollectionItemScope.longPressDrag(): Modifier {
+    val haptic = LocalHapticFeedback.current
+    return Modifier.longPressDraggableHandle(onDragStarted = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) })
 }
 
 @Composable
@@ -501,7 +512,8 @@ fun QueueTab(ui: Ui, cat: Catalog) {
                 ReorderableItem(reorder, key = keys[i], enabled = drag) {
                     if (t == null) return@ReorderableItem
                     TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
-                        dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null)
+                        dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null,
+                        dragModifier = if (drag) longPressDrag() else Modifier)
                 }
             }
         }
