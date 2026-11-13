@@ -2,6 +2,9 @@ package dev.buyolitsez.b2player
 
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
+import com.anthropic.client.okhttp.AnthropicOkHttpClient
+import com.anthropic.models.messages.MessageCreateParams
+import com.anthropic.models.messages.OutputConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -103,7 +106,50 @@ class LyricsRepo(private val app: App) {
 
     fun clearCache() { dir.listFiles()?.forEach { it.delete() } }
 
+    private val translations = File(app.filesDir, "lyrics-translations").apply { mkdirs() }
+
+    /**
+     * Line-by-line translation of [lines] into [language] by Claude, the same size as [lines] with blank lines kept blank.
+     * Cached per track and language; a cached translation of a different number of lines is redone.
+     */
+    fun translate(t: Track, lines: List<String>, language: String, apiKey: String): List<String> {
+        val cacheFile = File(translations, hash(t.id + "|" + language) + ".json")
+        if (cacheFile.exists()) runCatching { JSONArray(cacheFile.readText()) }.getOrNull()
+            ?.takeIf { it.length() == lines.size }?.let { a -> return List(a.length()) { a.getString(it) } }
+
+        val numbered = lines.withIndex().filter { it.value.isNotBlank() }.joinToString("\n") { "${it.index + 1}\t${it.value.trim()}" }
+        val params = MessageCreateParams.builder()
+            .model(Assistant.MODEL)
+            .maxTokens(8000L)
+            .system(TRANSLATE.replace("LANGUAGE", language))
+            .addUserMessage("Song: ${t.artist} — ${t.title}\n\n$numbered")
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .build()
+        val client = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
+        val reply = try {
+            client.messages().create(params).content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n")
+        } finally { client.close() }
+        val byNumber = reply.lines().mapNotNull { NUMBERED.matchEntire(it.trim()) }
+            .associate { it.groupValues[1].toInt() - 1 to it.groupValues[2].trim() }
+        val out = lines.indices.map { i -> if (lines[i].isBlank()) "" else byNumber[i] ?: "" }
+        cacheFile.writeText(JSONArray(out).toString())
+        return out
+    }
+
     companion object {
+        private val NUMBERED = Regex("""(\d+)[\t.:|)]\s*(.*)""")
+
+        private val TRANSLATE = """
+            You translate song lyrics into LANGUAGE for a listener who reads the translation next to the original, line by line.
+            Translate each line so that it says what that line means in the song: take the whole song into account (its story,
+            imagery and mood, idioms, slang, wordplay and references) rather than translating lines word by word on their own.
+            Keep the tone; don't rhyme or pad. Never merge, split, skip or reorder lines, even when a sentence runs over several
+            lines: then translate each part so that the pieces read in order. A line that is already in LANGUAGE, or is only
+            sounds like "oh-oh" or "la-la", stays as it is.
+            The lines come numbered as "number<TAB>text". Reply with exactly one line per input line in the same form,
+            "number<TAB>translation", and nothing else.
+        """.trimIndent()
+
         private val TIME = Regex("""\[(\d+):(\d+)(?:[.:](\d+))?]""")
 
         /** Parses "[mm:ss.xx] text" lines; null when the text has no time tags. */

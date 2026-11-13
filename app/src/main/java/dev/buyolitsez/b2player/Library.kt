@@ -30,7 +30,7 @@ fun searchFold(s: String): String = java.text.Normalizer.normalize(s.lowercase()
 
 class Album(
     val id: String, val dir: String, val title: String, val artist: String, val year: Int?, val cover: String?,
-    val added: Long,
+    val added: Long, val genre: String?,
 ) {
     lateinit var tracks: List<Track>
     val duration get() = tracks.sumOf { it.duration }
@@ -50,6 +50,11 @@ class Catalog(val albums: List<Album>) {
         albums.groupBy { it.artist.lowercase() }.values
             .map { list -> list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key to list }
             .sortedBy { it.first.lowercase() }
+    /** Albums by genre tag; albums without one come last under an empty name. */
+    val genres: List<Pair<String, List<Album>>> =
+        albums.groupBy { it.genre?.lowercase().orEmpty() }.values
+            .map { list -> list.groupingBy { it.genre.orEmpty() }.eachCount().maxBy { it.value }.key to list }
+            .sortedWith(compareBy({ it.first.isEmpty() }, { it.first.lowercase() }))
     val root = Folder("Folders", "").also { root ->
         for (a in albums) {
             var f = root
@@ -98,7 +103,7 @@ class Catalog(val albums: List<Album>) {
         )
 
         private fun readAlbum(r: android.util.JsonReader): Album {
-            var id = ""; var dir = ""; var title = ""; var artist = ""; var year: Int? = null; var cover: String? = null; var added = 0L
+            var id = ""; var dir = ""; var title = ""; var artist = ""; var year: Int? = null; var cover: String? = null; var added = 0L; var genre: String? = null
             val raw = ArrayList<RawTrack>()
             r.beginObject()
             while (r.hasNext()) when (r.nextName()) {
@@ -109,6 +114,7 @@ class Catalog(val albums: List<Album>) {
                 "year" -> year = r.int()
                 "cover" -> cover = r.str()
                 "added" -> added = r.nextLong()
+                "genre" -> genre = r.str()
                 "tracks" -> {
                     r.beginArray()
                     while (r.hasNext()) {
@@ -136,7 +142,7 @@ class Catalog(val albums: List<Album>) {
                 else -> r.skipValue()
             }
             r.endObject()
-            val album = Album(id, dir, title, artist, year, cover, added)
+            val album = Album(id, dir, title, artist, year, cover, added, genre)
             album.tracks = raw.map { t ->
                 Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics)
             }

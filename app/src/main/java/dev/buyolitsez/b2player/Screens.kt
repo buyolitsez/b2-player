@@ -112,6 +112,38 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     }
 }
 
+const val NO_GENRE = "No genre"
+
+@UnstableApi
+@Composable
+fun GenresTab(ui: Ui, cat: Catalog) {
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val genres = remember(cat, fq) { cat.genres.filter { fq in searchFold(it.first.ifEmpty { NO_GENRE }) } }
+    Column {
+        FilterField(q) { q = it }
+        LazyColumn {
+            items(genres, key = { it.first }) { (name, albums) ->
+                ListRow(Icons.Default.Category, name.ifEmpty { NO_GENRE }, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name)) }
+            }
+        }
+    }
+}
+
+@UnstableApi
+@Composable
+fun GenreScreen(ui: Ui, cat: Catalog, name: String) {
+    val albums = remember(cat, name) { cat.genres.firstOrNull { it.first == name }?.second.orEmpty() }
+    val tracks = remember(albums) { albums.flatMap { it.tracks } }
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
+    Column {
+        FilterField(q) { q = it }
+        AlbumGrid(ui, shown, header = { PlayButtons(ui, "genre:$name", name.ifEmpty { NO_GENRE }, tracks) })
+    }
+}
+
 @UnstableApi
 @Composable
 fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
