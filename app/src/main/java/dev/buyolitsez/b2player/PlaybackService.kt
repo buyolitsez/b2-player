@@ -2,6 +2,7 @@ package dev.buyolitsez.b2player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -16,8 +17,12 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.CacheBitmapLoader
+import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
@@ -167,6 +172,7 @@ class PlaybackService : MediaSessionService() {
                 )
             })
             .build()
+        setMediaNotificationProvider(KeepForegroundProvider())
         if (player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) app.audioFx.attach(player.audioSessionId)
         if (app.prefs.restoreQueue.value) restoreQueue(player)
         listenJob = trackListening(player)
@@ -328,6 +334,21 @@ class PlaybackService : MediaSessionService() {
     // notification goes with it. Swiping the app away from recents still stops a paused player.
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         super.onUpdateNotification(session, startInForegroundRequired || session.player.mediaItemCount > 0)
+    }
+
+    // A cover that loads after the notification was built comes back through Media3's own callback,
+    // which leaves the foreground once the pause is over 10 min old. While paused, rebuild through
+    // onUpdateNotification instead: the cover is cached by then.
+    private inner class KeepForegroundProvider : MediaNotification.Provider {
+        private val default = DefaultMediaNotificationProvider(this@PlaybackService)
+        override fun createNotification(
+            session: MediaSession, buttons: ImmutableList<CommandButton>,
+            actions: MediaNotification.ActionFactory, callback: MediaNotification.Provider.Callback,
+        ) = default.createNotification(session, buttons, actions) { n ->
+            if (session.player.playWhenReady) callback.onNotificationChanged(n) else onUpdateNotification(session, true)
+        }
+        override fun handleCustomCommand(session: MediaSession, action: String, extras: Bundle) =
+            default.handleCustomCommand(session, action, extras)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
