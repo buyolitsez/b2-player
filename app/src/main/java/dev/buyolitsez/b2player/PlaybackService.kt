@@ -22,12 +22,15 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -87,6 +90,7 @@ class PlaybackService : MediaSessionService() {
                 }
                 AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
+                updateLikeButton()
                 switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
@@ -156,6 +160,16 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(open)
             .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(app.dataSourceFactory).build()))
             .setCallback(object : MediaSession.Callback {
+                override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
+                    MediaSession.ConnectionResult.AcceptedResultBuilder(s)
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).build())
+                        .build()
+                override fun onCustomCommand(
+                    s: MediaSession, c: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle,
+                ): ListenableFuture<SessionResult> {
+                    if (command == LIKE) track(player.currentMediaItem)?.let { app.setLiked(listOf(it), !app.library.isLiked(it)) }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 override fun onMediaButtonEvent(s: MediaSession, c: MediaSession.ControllerInfo, intent: Intent): Boolean {
                     if (!app.prefs.headsetGestures.value) return false
                     @Suppress("DEPRECATION")
@@ -176,6 +190,23 @@ class PlaybackService : MediaSessionService() {
         if (player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) app.audioFx.attach(player.audioSessionId)
         if (app.prefs.restoreQueue.value) restoreQueue(player)
         listenJob = trackListening(player)
+        // Likes made in the app, and the catalog arriving after the session, redraw the heart too.
+        likeJob = app.scope.launch(Dispatchers.Main) { combine(app.likesChanged, app.catalog) { _, _ -> }.collect { updateLikeButton() } }
+    }
+
+    private var likeJob: Job? = null
+
+    /** The heart next to the playback buttons in the media notification, filled for a liked track. */
+    private fun updateLikeButton() {
+        val s = session ?: return
+        val t = track(s.player.currentMediaItem)
+        s.setMediaButtonPreferences(if (t == null) ImmutableList.of() else {
+            val liked = app.library.isLiked(t)
+            ImmutableList.of(
+                CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
+                    .setDisplayName(if (liked) "Unlike" else "Like").setSessionCommand(LIKE).build()
+            )
+        })
     }
 
     private var presses = 0
@@ -325,7 +356,10 @@ class PlaybackService : MediaSessionService() {
         return DataSpec.Builder().setUri(uri).setPosition(pos).setLength(minOf(length, t.size - pos)).build()
     }
 
-    private companion object { const val HEAD = 8L shl 20 }
+    private companion object {
+        const val HEAD = 8L shl 20
+        val LIKE = SessionCommand("dev.buyolitsez.b2player.LIKE", Bundle.EMPTY)
+    }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
@@ -358,6 +392,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         listenJob?.cancel()
+        likeJob?.cancel()
         app.audioFx.release()
         prefetching.forEach { it.cancel() }
         prefetchExecutor.shutdown()

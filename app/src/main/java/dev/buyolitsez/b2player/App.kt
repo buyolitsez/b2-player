@@ -109,6 +109,30 @@ class App : Application() {
     val sleepAfterAlbum = MutableStateFlow<String?>(null)
     val sleepAfterTracks = MutableStateFlow<Int?>(null)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Bumped on every like or unlike, from the app or the media notification. */
+    val likesChanged = MutableStateFlow(0)
+
+    /** Likes or unlikes tracks: downloads or deletes them as set, syncs likes and mirrors them to Last.fm. */
+    fun setLiked(tracks: List<Track>, liked: Boolean) {
+        val changed = tracks.filter { library.isLiked(it) != liked }
+        if (changed.isEmpty()) return
+        changed.forEach { library.setLiked(it, liked) }
+        if (liked && prefs.autoDownloadLiked.value) {
+            val one = changed.singleOrNull()
+            DownloadWorker.enqueue(this, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
+                one?.title ?: "${changed.size} liked tracks", changed, wifiOnly = prefs.autoWifiOnly.value)
+        }
+        if (!liked && prefs.deleteOnUnlike.value) {
+            // CUE tracks share a file: keep it while another of its tracks is still liked.
+            changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }
+                .distinctBy { it.path }.forEach { library.deleteDownload(it) }
+        }
+        likesChanged.value++
+        scope.launch(Dispatchers.IO) { runCatching { library.syncLikes(b2) }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }
+        if (lastFm.connected) scope.launch(Dispatchers.IO) {
+            changed.forEach { t -> runCatching { lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
+        }
+    }
 
     /**
      * Copies the log to logs/<date>.log in the bucket when there were problems since the last
