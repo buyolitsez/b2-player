@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,7 +22,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val accent by animateColorAsState(ui.colors.accent, label = "accent")
-            PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = Color.Black) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
+            PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
         }
     }
 
@@ -117,17 +117,18 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
-    LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
-        ui.colors = if (!ui.prefs.coverTint.value) DefaultColors else coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it) } } ?: DefaultColors
+    val dark = isSystemInDarkTheme()
+    LaunchedEffect(coverKey, ui.prefs.coverTint.value, dark) {
+        ui.colors = (if (ui.prefs.coverTint.value) coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it, dark) } } else null) ?: defaultColors(dark)
     }
 
     Scaffold(
-        containerColor = Color.Black,
-        snackbarHost = { SnackbarHost(ui.snackbar) { Snackbar(it, containerColor = Gray2, contentColor = Color.White, actionColor = MaterialTheme.colorScheme.primary) } },
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(ui.snackbar) { Snackbar(it, containerColor = Gray2, contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary) } },
         topBar = {
             if (ui.tab == Tab.Now && screen == Screen.Root) { Spacer(Modifier.statusBarsPadding()); return@Scaffold }
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
                     val title = when (screen) {
                         is Screen.AlbumView -> screen.album.title
@@ -182,7 +183,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         },
         bottomBar = {
             // Above the keyboard when it is open, so the tabs, mini player and messages stay visible.
-            Column(Modifier.background(Color.Black).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
+            Column(Modifier.background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
                 if (ui.tab != Tab.Now || screen != Screen.Root) MiniPlayer(ui, cat)
                 HorizontalDivider(color = Gray2)
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {

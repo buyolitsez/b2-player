@@ -67,7 +67,7 @@ fun LyricsPanel(ui: Ui, t: Track, modifier: Modifier, toggle: () -> Unit) {
             else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
                 note?.let { Text(it, Modifier.padding(bottom = 12.dp, end = 40.dp), style = MaterialTheme.typography.bodySmall, color = Muted) }
                 if (translated == null) Text(l.plain!!, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 26.sp))
-                else lines!!.forEachIndexed { i, line -> LyricRow(line, translated.getOrNull(i), Color(0xFFDDDDDD), FontWeight.Normal, Modifier.padding(vertical = 3.dp)) }
+                else lines!!.forEachIndexed { i, line -> LyricRow(line, translated.getOrNull(i), MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f), FontWeight.Normal, Modifier.padding(vertical = 3.dp)) }
                 Text("Source: ${l.source}", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
             }
         }
@@ -107,7 +107,7 @@ private fun SyncedLyrics(ui: Ui, lines: List<LyricLine>, translation: List<Strin
         itemsIndexed(lines) { i, line ->
             LyricRow(
                 line.text, translation?.getOrNull(i),
-                color = if (i == current) MaterialTheme.colorScheme.primary else if (i < current) Muted else Color(0xFFDDDDDD),
+                color = if (i == current) MaterialTheme.colorScheme.primary else if (i < current) Muted else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
                 weight = if (i == current) FontWeight.Medium else FontWeight.Normal,
                 modifier = Modifier.combinedClickable(onLongClick = { c.seekTo(line.ms) }, onClick = toggle).padding(vertical = 6.dp),
             )

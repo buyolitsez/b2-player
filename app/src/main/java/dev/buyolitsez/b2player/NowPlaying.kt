@@ -40,12 +40,12 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(500) } }
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     val accent = MaterialTheme.colorScheme.primary
-    val background = if (ui.prefs.coverTint.value) ui.colors.background else Color.Black
+    val background = if (ui.prefs.coverTint.value) ui.colors.background else MaterialTheme.colorScheme.background
     // Title, buttons, seek bar; [fill] pushes "Next" to the bottom in portrait.
     @Composable
     fun ColumnScope.details(fill: Boolean) {
         Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(t.artist, color = Color(0xFFCCCCCC), modifier = Modifier.clickable { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) })
+        Text(t.artist, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), modifier = Modifier.clickable { ui.open(Screen.ArtistView(t.album.artist), Tab.Artists) })
         Text(t.album.title, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1,
             modifier = Modifier.clickable { ui.open(Screen.AlbumView(t.album), Tab.Albums) })
         // The line is always there, so the controls don't jump when a timer is set.
@@ -54,13 +54,13 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
             style = MaterialTheme.typography.bodySmall, color = accent)
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, if (ui.liked(t)) accent else Color.White) { ui.toggleLike(t) }
+            SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, if (ui.liked(t)) accent else MaterialTheme.colorScheme.onSurface) { ui.toggleLike(t) }
             if (ui.downloaded(t)) SmallIcon(Icons.Default.DownloadDone, accent) { ui.deleteDownloads(listOf(t)) }
-            else SmallIcon(Icons.Default.Download, Color.White) { ui.download(t.id, t.title, listOf(t)) }
-            SmallIcon(Icons.Default.Shuffle, if (ui.shuffle) accent else Color.White) { c.shuffleModeEnabled = !ui.shuffle }
+            else SmallIcon(Icons.Default.Download, MaterialTheme.colorScheme.onSurface) { ui.download(t.id, t.title, listOf(t)) }
+            SmallIcon(Icons.Default.Shuffle, if (ui.shuffle) accent else MaterialTheme.colorScheme.onSurface) { c.shuffleModeEnabled = !ui.shuffle }
             SmallIcon(
                 if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                if (ui.repeat != Player.REPEAT_MODE_OFF) accent else Color.White,
+                if (ui.repeat != Player.REPEAT_MODE_OFF) accent else MaterialTheme.colorScheme.onSurface,
             ) {
                 c.repeatMode = when (ui.repeat) {
                     Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
@@ -70,7 +70,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
             }
             var menu by remember { mutableStateOf(false) }
             Box {
-                SmallIcon(Icons.Default.MoreHoriz, Color.White) { menu = true }
+                SmallIcon(Icons.Default.MoreHoriz, MaterialTheme.colorScheme.onSurface) { menu = true }
                 DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
                     @Composable
                     fun item(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, action: () -> Unit) =
@@ -90,7 +90,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
             value = dragging ?: (pos.toFloat() / dur).coerceIn(0f, 1f),
             onValueChange = { dragging = it },
             onValueChangeFinished = { dragging?.let { c.seekTo((it * dur).toLong()) }; dragging = null },
-            colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = Color(0x33FFFFFF)),
+            colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatTime((dragging?.let { it * dur } ?: pos.toFloat()) / 1000.0), style = MaterialTheme.typography.bodySmall, color = Muted)
@@ -99,7 +99,7 @@ fun NowPlayingTab(ui: Ui, cat: Catalog) {
         Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             IconButton({ c.seekToPrevious() }) { Icon(Icons.Default.SkipPrevious, null, Modifier.size(36.dp)) }
             Box(Modifier.size(68.dp).clip(CircleShape).background(accent).clickable { if (ui.playing) c.pause() else c.resume() }, Alignment.Center) {
-                Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(38.dp), tint = Color.Black)
+                Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
             IconButton({ c.seekToNextMediaItem() }) { Icon(Icons.Default.SkipNext, null, Modifier.size(36.dp)) }
         }
@@ -176,8 +176,8 @@ fun MiniPlayer(ui: Ui, cat: Catalog?) {
                 Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
             }
             SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                if (ui.liked(t)) MaterialTheme.colorScheme.primary else Color.White) { ui.toggleLike(t) }
-            SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, Color.White) { c?.run { if (ui.playing) pause() else resume() } }
+                if (ui.liked(t)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) { ui.toggleLike(t) }
+            SmallIcon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, MaterialTheme.colorScheme.onSurface) { c?.run { if (ui.playing) pause() else resume() } }
         }
     }
 }
