@@ -1,12 +1,13 @@
 package dev.buyolitsez.b2player
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -14,13 +15,16 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 
-// The light theme follows the system setting; these read the current scheme.
+/** Whether the dark theme is on: the setting in Settings, or the system one. */
+val LocalDark = compositionLocalOf { true }
+
+// These read the current scheme.
 val Gray1: Color @Composable get() = MaterialTheme.colorScheme.surfaceContainer
 val Gray2: Color @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 /** Background of the playing track's row and of a swiped row. */
-val ActiveRow: Color @Composable get() = if (isSystemInDarkTheme()) Color(0xFF0D1A12) else Color(0xFFE6F4EC)
-val SwipeRow: Color @Composable get() = if (isSystemInDarkTheme()) Color(0xFF0F2A1C) else Color(0xFFD2EDDC)
+val ActiveRow: Color @Composable get() = if (LocalDark.current) Color(0xFF0D1A12) else Color(0xFFE6F4EC)
+val SwipeRow: Color @Composable get() = if (LocalDark.current) Color(0xFF0F2A1C) else Color(0xFFD2EDDC)
 
 /** Accent and background tint taken from the current album cover. */
 data class CoverColors(val accent: Color, val background: Color)
@@ -56,8 +60,8 @@ private val Dense = Typography().let { t ->
 }
 
 @Composable
-fun PlayerTheme(accent: Color, content: @Composable () -> Unit) {
-    val scheme = if (isSystemInDarkTheme()) darkColorScheme(
+fun PlayerTheme(accent: Color, dark: Boolean, content: @Composable () -> Unit) {
+    val scheme = if (dark) darkColorScheme(
         primary = accent, onPrimary = Color.Black, secondary = accent, onSecondary = Color.Black,
         background = Color.Black, onBackground = Color(0xFFEDEDED),
         surface = Color.Black, onSurface = Color(0xFFEDEDED), onSurfaceVariant = Color(0xFF8A8A8A),
@@ -72,5 +76,5 @@ fun PlayerTheme(accent: Color, content: @Composable () -> Unit) {
         surfaceContainerHighest = Color(0xFFE9E9E9), surfaceContainerLow = Color(0xFFF3F3F3), surfaceContainerLowest = Color.White,
         outline = Color(0xFFCCCCCC), outlineVariant = Color(0xFFE0E0E0),
     )
-    MaterialTheme(colorScheme = scheme, typography = Dense, content = content)
+    CompositionLocalProvider(LocalDark provides dark) { MaterialTheme(colorScheme = scheme, typography = Dense, content = content) }
 }
