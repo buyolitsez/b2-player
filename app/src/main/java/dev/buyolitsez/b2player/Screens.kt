@@ -95,7 +95,7 @@ fun ArtistsTab(ui: Ui, cat: Catalog) {
         FilterField(q) { q = it }
         LazyColumn {
             items(artists, key = { it.first }) { (name, albums) ->
-                ListRow(Icons.Default.Person, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name)) }
+                ListRow(null, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name)) }
             }
         }
     }
@@ -127,7 +127,7 @@ fun GenresTab(ui: Ui, cat: Catalog) {
         FilterField(q) { q = it }
         LazyColumn {
             items(genres, key = { it.first }) { (name, albums) ->
-                ListRow(Icons.Default.Category, name.ifEmpty { NO_GENRE }, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name)) }
+                ListRow(null, name.ifEmpty { NO_GENRE }, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name)) }
             }
         }
     }
@@ -199,7 +199,7 @@ fun SearchTab(ui: Ui, cat: Catalog) {
             else if (q.length >= 2 && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(16.dp), color = Muted) }
             if (artists.isNotEmpty()) item { SectionTitle("Artists") }
             items(artists.take(10), key = { "r" + it.first }) { (name, albums) ->
-                ListRow(Icons.Default.Person, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name), Tab.Artists) }
+                ListRow(null, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.ArtistView(name), Tab.Artists) }
             }
             item { more(artists.size - 10, "artists") }
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
@@ -448,7 +448,7 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
         }
         if (topArtists.isNotEmpty()) item { SectionTitle("Top artists") }
         items(topArtists, key = { "a" + it.key }) { (name, n) ->
-            ListRow(Icons.Default.Person, name, plays(n)) { ui.open(Screen.ArtistView(name), Tab.Artists) }
+            ListRow(null, name, plays(n)) { ui.open(Screen.ArtistView(name), Tab.Artists) }
         }
         if (forgotten.isNotEmpty()) item { SectionTitle("Haven't played in a while") }
         items(forgotten, key = { "f" + it.id }) { a -> AlbumRow(ui, a) }
@@ -497,7 +497,7 @@ fun QueueTab(ui: Ui, cat: Catalog) {
                     if (showSaved) {
                         if (saved.isEmpty()) Text("No saved queues", Modifier.padding(12.dp), color = Muted)
                         saved.forEachIndexed { i, s ->
-                            ListRow(Icons.Default.Bookmark, s.name, "${s.index + 1} / ${s.ids.size}", trailing = { SmallIcon(Icons.Default.Close) { ui.deleteSaved(i) } }) {
+                            ListRow(null, s.name, "${s.index + 1} / ${s.ids.size}", trailing = { SmallIcon(Icons.Default.Close) { ui.deleteSaved(i) } }) {
                                 showSaved = false; ui.resumeSaved(i)
                             }
                         }
