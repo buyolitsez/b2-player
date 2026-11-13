@@ -386,7 +386,7 @@ def main():
         tracks = []
         lyrics = {}
         for x in tr:
-            o = {"path": x["path"], "title": x["title"], "duration": x["duration"], "size": x["size"]}
+            o = {"path": x["path"], "title": x["title"], "duration": x["duration"], "size": x["size"], "mtime": x["mtime"]}
             if x["artist"] and x["artist"] != artist:
                 o["artist"] = x["artist"]
             for k in ("track", "disc", "start"):
