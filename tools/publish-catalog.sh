@@ -8,13 +8,18 @@ REMOTE="${B2_PLAYER_REMOTE:-b2music:buyolitsez-music}"
 OUT="${B2_PLAYER_OUT:-$HOME/.cache/b2-player}"
 here="$(cd "$(dirname "$0")" && pwd)"
 
-python3 "$here/make_catalog.py" --out "$OUT" "$@"
+mkdir -p "$OUT"
+rclone lsf -R --files-only --fast-list "$REMOTE/music" > "$OUT/bucket-files.txt"
+# Tracks deleted from the music folder but still in the bucket stay in the catalog.
+rclone copyto "$REMOTE/catalog.json.gz" "$OUT/previous-catalog.json.gz"
+python3 "$here/make_catalog.py" --out "$OUT" \
+  --previous "$OUT/previous-catalog.json.gz" --bucket-files "$OUT/bucket-files.txt" "$@"
 rclone copy "$OUT/covers" "$REMOTE/covers" --fast-list --transfers 16
 rclone copy "$OUT/lyrics" "$REMOTE/lyrics" --fast-list --transfers 16
 rclone copyto "$OUT/catalog.json.gz" "$REMOTE/catalog.json.gz"
 
 # Every catalog path must exist in the bucket (catches name-encoding mismatches).
-python3 - "$OUT/catalog.json.gz" <(rclone lsf -R --files-only --fast-list "$REMOTE/music") <<'EOF'
+python3 - "$OUT/catalog.json.gz" "$OUT/bucket-files.txt" <<'EOF'
 import gzip, json, sys
 cat = json.load(gzip.open(sys.argv[1], "rt", encoding="utf-8"))
 remote = set(open(sys.argv[2], encoding="utf-8").read().splitlines())
