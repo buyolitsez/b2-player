@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
 
 private val tabIcons: Map<Tab, ImageVector> = mapOf(
     Tab.Queue to Icons.Default.List, Tab.Now to Icons.Default.PlayCircle, Tab.Folders to Icons.Default.Folder,
-    Tab.Albums to Icons.Default.Album, Tab.Artists to Icons.Default.Person, Tab.Playlists to Icons.AutoMirrored.Filled.QueueMusic,
+    Tab.Albums to Icons.Default.Album, Tab.Artists to Icons.Default.Person, Tab.Genres to Icons.Default.Category, Tab.Playlists to Icons.AutoMirrored.Filled.QueueMusic,
     Tab.Search to Icons.Default.Search,
 )
 
@@ -132,6 +132,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     val title = when (screen) {
                         is Screen.AlbumView -> screen.album.title
                         is Screen.ArtistView -> screen.name
+                        is Screen.GenreView -> screen.name.ifEmpty { NO_GENRE }
                         is Screen.FolderView -> screen.path.substringAfterLast('/')
                         is Screen.PlaylistView -> ui.app.playlists.get(screen.id)?.name ?: "Playlist"
                         Screen.LikedView -> "Liked"
@@ -147,7 +148,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                 navigationIcon = { if (stack.size > 1) IconButton({ ui.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
                     if (offline) Icon(Icons.Default.CloudOff, null, Modifier.padding(end = 4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                    if (screen == Screen.Root && ui.tab == Tab.Albums || screen is Screen.ArtistView) {
+                    if (screen == Screen.Root && ui.tab == Tab.Albums || screen is Screen.ArtistView || screen is Screen.GenreView) {
                         IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
                             ui.version
                             Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
@@ -209,6 +210,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                 screen == Screen.EqualizerView -> EqualizerScreen(ui)
                 screen is Screen.AlbumView -> AlbumScreen(ui, screen.album)
                 screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
+                screen is Screen.GenreView -> GenreScreen(ui, c, screen.name)
                 screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
                 screen is Screen.PlaylistView -> PlaylistScreen(ui, c, screen.id)
                 screen == Screen.LikedView -> LikedScreen(ui, c)
@@ -219,6 +221,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     Tab.Folders -> FolderScreen(ui, c, "")
                     Tab.Albums -> AlbumsTab(ui, c)
                     Tab.Artists -> ArtistsTab(ui, c)
+                    Tab.Genres -> GenresTab(ui, c)
                     Tab.Playlists -> PlaylistsTab(ui, c, importM3u)
                     Tab.Search -> SearchTab(ui, c)
                 }
