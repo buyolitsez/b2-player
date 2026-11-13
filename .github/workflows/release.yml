@@ -9,8 +9,10 @@ on:
 permissions:
   contents: write
 
+# Releases go one at a time. PR builds get a group of their own: in the shared group a waiting
+# build is cancelled as soon as another one queues behind it.
 concurrency:
-  group: release
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'release' }}
   cancel-in-progress: false
 
 jobs:
