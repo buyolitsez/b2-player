@@ -9,10 +9,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -61,7 +61,14 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val accent by animateColorAsState(ui.colors.accent, label = "accent")
-            PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
+            val dark = isDark(app.prefs.theme.value)
+            // Status and navigation bar icons follow the app theme, which can differ from the system one.
+            LaunchedEffect(dark) {
+                val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                enableEdgeToEdge(style, style)
+            }
+            PlayerTheme(accent, dark) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
         }
     }
 
@@ -117,7 +124,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDark.current
     LaunchedEffect(coverKey, ui.prefs.coverTint.value, dark) {
         ui.colors = (if (ui.prefs.coverTint.value) coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it, dark) } } else null) ?: defaultColors(dark)
     }

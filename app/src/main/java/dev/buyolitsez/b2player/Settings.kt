@@ -19,6 +19,8 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
     val p = app.prefs
     ui.version
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        SettingChoice("Theme", null, listOf("System", "Light", "Dark"), p.theme.value, { it }) { p.theme.set(it) }
+
         // ---------- storage account ----------
         SettingsHeader("Backblaze B2")
         val s = remember { app.b2.settings }

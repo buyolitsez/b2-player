@@ -41,6 +41,8 @@ class Prefs(context: Context) {
         fun set(v: String) { value = v; p.edit().putString(key, v).apply() }
     }
 
+    // Appearance: "System", "Light" or "Dark"
+    val theme = Str("theme", "System")
     // Playback
     val prefetchCount = Num("prefetchCount", 3)
     val skipSilence = Bool("skipSilence", false)
