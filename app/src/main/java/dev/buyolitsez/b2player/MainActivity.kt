@@ -133,7 +133,19 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(ui.snackbar) { Snackbar(it, containerColor = Gray2, contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary) } },
+        snackbarHost = {
+            SnackbarHost(ui.snackbar) { data ->
+                key(data) {
+                    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+                        if (v != SwipeToDismissBoxValue.Settled) data.dismiss()
+                        true
+                    })
+                    SwipeToDismissBox(state, backgroundContent = {}) {
+                        Snackbar(data, containerColor = Gray2, contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        },
         topBar = {
             if (ui.tab == Tab.Now && screen == Screen.Root) { Spacer(Modifier.statusBarsPadding()); return@Scaffold }
             TopAppBar(
