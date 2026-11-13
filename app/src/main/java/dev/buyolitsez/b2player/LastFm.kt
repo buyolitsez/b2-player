@@ -9,7 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 
-/** Last.fm scrobbling. Scrobbles wait in a local queue until they are accepted. */
+/** Last.fm scrobbling and loved tracks. Scrobbles wait in a local queue until they are accepted. */
 class LastFm(context: Context) {
     private val p = context.getSharedPreferences("lastfm", Context.MODE_PRIVATE)
 
@@ -49,6 +49,12 @@ class LastFm(context: Context) {
                 "album" to t.album.title, "duration" to t.duration.toInt().toString(), "sk" to session!!,
             )
         )
+    }
+
+    /** Mirrors a like or unlike as track.love / track.unlove. */
+    fun love(t: Track, loved: Boolean) {
+        if (!connected) return
+        call(mapOf("method" to if (loved) "track.love" else "track.unlove", "artist" to t.artist, "track" to t.title, "sk" to session!!))
     }
 
     @Synchronized
