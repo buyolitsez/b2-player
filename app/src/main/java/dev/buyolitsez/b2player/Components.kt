@@ -150,9 +150,10 @@ fun TrackRow(
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted,
                 )
             }
-            Text(formatTime(t.duration), style = MaterialTheme.typography.bodySmall, color = Muted)
-            DownloadMark(ui, t)
+            // Marks go before the duration, so durations line up at the right edge.
             if (ui.liked(t)) Icon(Icons.Default.Favorite, null, Modifier.padding(start = 6.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+            DownloadMark(ui, t)
+            Text(formatTime(t.duration), Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
             TrackMenu(ui, t, queueIndex, extraMenu)
         }
     }
