@@ -85,6 +85,8 @@ def read_tags(path):
         "track": num(first(t, "tracknumber")),
         "disc": num(first(t, "discnumber")),
         "year": num(first(t, "date") or first(t, "originaldate")),
+        # "Rock; Indie" -> "Rock": one genre per track keeps the app's genre list short.
+        "genre": (first(t, "genre") or "").split(";")[0].strip() or None,
         "duration": round(f.info.length, 3) if f.info and f.info.length else 0,
     }
 
@@ -338,7 +340,7 @@ def main():
                     entries.append({
                         "path": rel, "title": ct["title"] or f"Track {ct['track']}",
                         "artist": artist, "albumartist": c_perf or t["albumartist"],
-                        "album": c_album or t["album"], "track": ct["track"], "disc": None, "year": t["year"],
+                        "album": c_album or t["album"], "track": ct["track"], "disc": None, "year": t["year"], "genre": t["genre"],
                         "start": ct["start"], "duration": round(end - ct["start"], 3), "liked": fav(artist, ct["title"]),
                         "size": st.st_size, "mtime": int(st.st_mtime),
                     })
@@ -402,9 +404,13 @@ def main():
                 json.dump(lyrics, fh, ensure_ascii=False)
         elif os.path.exists(lyr_file):
             os.remove(lyr_file)
-        out_albums.append({"id": aid, "dir": al["dir"], "title": title, "artist": artist or "Unknown",
-                           "year": common(x["year"] for x in tr), "cover": cover,
-                           "added": max(x["mtime"] for x in tr), "tracks": tracks})
+        o = {"id": aid, "dir": al["dir"], "title": title, "artist": artist or "Unknown",
+             "year": common(x["year"] for x in tr), "cover": cover,
+             "added": max(x["mtime"] for x in tr), "tracks": tracks}
+        genre = common(x["genre"] for x in tr)
+        if genre:
+            o["genre"] = genre
+        out_albums.append(o)
 
     out_albums.sort(key=lambda x: (x["artist"].lower(), x["year"] or 0, x["title"].lower()))
     catalog = {"version": 1, "generated": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),

@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class Tab(val title: String) {
-    Queue("Queue"), Now("Now playing"), Folders("Folders"), Albums("Albums"), Artists("Artists"),
+    Queue("Queue"), Now("Now playing"), Folders("Folders"), Albums("Albums"), Artists("Artists"), Genres("Genres"),
     Playlists("Playlists"), Search("Search")
 }
 
@@ -29,6 +29,7 @@ sealed interface Screen {
     data object Root : Screen
     data class AlbumView(val album: Album) : Screen
     data class ArtistView(val name: String) : Screen
+    data class GenreView(val name: String) : Screen
     data class FolderView(val path: String) : Screen
     data class PlaylistView(val id: String) : Screen
     data object LikedView : Screen
