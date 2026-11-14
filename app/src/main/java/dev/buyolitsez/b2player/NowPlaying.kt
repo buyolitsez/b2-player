@@ -36,7 +36,9 @@ import kotlinx.coroutines.delay
 fun NowPlayingScreen(ui: Ui, cat: Catalog) {
     val c = ui.controller
     val t = ui.currentId?.let { cat.byId[it] }
-    if (c == null || t == null) { LaunchedEffect(Unit) { ui.nowOpen = false }; return }
+    // The controller connects a moment after the app comes back (from the notification, say); close only when nothing plays.
+    if (c == null) return
+    if (t == null) { LaunchedEffect(Unit) { ui.nowOpen = false }; return }
     var pos by remember { mutableLongStateOf(0L) }
     var dragging by remember { mutableStateOf<Float?>(null) }
     var sleep by remember { mutableStateOf(false) }

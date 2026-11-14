@@ -2,6 +2,7 @@ package dev.buyolitsez.b2player
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }; delay(60_000) } }
         }
+        if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
         // Download progress and finished downloads refresh the "downloaded" marks in lists.
         lifecycleScope.launch {
             WorkManager.getInstance(this@MainActivity).getWorkInfosByTagFlow(DownloadWorker.TAG)
@@ -90,6 +92,13 @@ class MainActivity : ComponentActivity() {
             PlayerTheme(accent) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Root(ui) { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "*/*")) } } }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
+    }
+
+    companion object { const val OPEN_NOW_PLAYING = "openNowPlaying" }
 
     override fun onStart() {
         super.onStart()
