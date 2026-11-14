@@ -42,16 +42,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
     private lateinit var ui: Ui
-    private var handoffJob: Job? = null
     private val importM3u = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) ui.importM3u(uris)
     }
@@ -64,9 +60,16 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) ui.open(Screen.Settings)
         ui.refreshCatalog()
-        // Likes made in cmus show up on return to the app and every minute while it is on screen.
+        // Likes made in cmus, and what it played for the Resume banner, show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }; delay(60_000) } }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }
+                    runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
+                        .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
+                    delay(60_000)
+                }
+            }
         }
         // Download progress and finished downloads refresh the "downloaded" marks in lists.
         lifecycleScope.launch {
@@ -99,15 +102,6 @@ class MainActivity : ComponentActivity() {
             ui.sync(c)
             ui.controller = c
         }, MoreExecutors.directExecutor())
-        // What cmus played meanwhile, for the Resume banner.
-        val app = application as App
-        if (app.b2.settings.complete) handoffJob = lifecycleScope.launch {
-            while (true) {
-                runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
-                    .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
-                delay(60_000)
-            }
-        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -117,7 +111,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        handoffJob?.cancel()
         ui.controller?.release(); ui.controller = null
         (application as App).uploadLogs()
         super.onStop()
