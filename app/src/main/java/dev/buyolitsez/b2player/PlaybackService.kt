@@ -204,7 +204,7 @@ class PlaybackService : MediaSessionService() {
 
     /**
      * Shuffle and the heart around the playback buttons in the media controls: the system puts one
-     * extra button on each side, so pause stays in the middle. The heart is drawn smaller.
+     * extra button on each side, so pause stays in the middle. Both are drawn smaller than the playback buttons.
      */
     private fun updateButtons() {
         val s = session ?: return
@@ -214,6 +214,7 @@ class PlaybackService : MediaSessionService() {
             val shuffle = s.player.shuffleModeEnabled
             ImmutableList.of(
                 CommandButton.Builder(if (shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
+                    .setCustomIconResId(if (shuffle) R.drawable.ic_shuffle_small_on else R.drawable.ic_shuffle_small_off)
                     .setDisplayName(if (shuffle) "Shuffle off" else "Shuffle").setSessionCommand(SHUFFLE).build(),
                 CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
                     .setCustomIconResId(if (liked) R.drawable.ic_heart_small else R.drawable.ic_heart_small_outline)
