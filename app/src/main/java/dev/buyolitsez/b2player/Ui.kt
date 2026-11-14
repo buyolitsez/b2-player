@@ -224,9 +224,10 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     /**
      * Everything that was played or added, before the filter: the filter can be switched back.
-     * Moves and removals made in the queue are not kept here.
+     * Moves and removals made in the queue are not kept here. Without the current track it is stale,
+     * e.g. from before an update, and the queue itself is used.
      */
-    private fun source() = library.queueSource.ifEmpty { queueIds }
+    private fun source() = library.queueSource.takeIf { currentId in it } ?: queueIds
 
     /** Keeps only the tracks of [source] that pass [f]; the current track plays on either way. */
     fun setQueueFilter(f: QueueFilter) = scope.launch {
@@ -236,6 +237,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         if (c.mediaItemCount == 0) return@launch
         val cur = c.currentMediaItemIndex
         val src = source()
+        library.queueSource = src
         val at = src.indexOf(c.currentMediaItem?.mediaId).takeIf { it >= 0 }
         fun items(ids: List<String>) = ids.mapNotNull { cat.byId[it] }.filter { passes(it) }.map { library.mediaItem(it) }
         val (before, after) = withContext(Dispatchers.IO) {
