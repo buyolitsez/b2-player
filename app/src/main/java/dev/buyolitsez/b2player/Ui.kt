@@ -451,7 +451,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         // Likes, playlists and history sync after the library is already usable.
         val syncStarted = System.currentTimeMillis()
         syncInBackground {
-            library.syncLikes(app.b2)
+            app.syncLikes()
             app.ratings.sync(app.b2)
             app.playlists.sync(app.b2)
             app.history.sync(app.b2)
