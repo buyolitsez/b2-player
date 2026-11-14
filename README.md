@@ -113,7 +113,7 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
 - Assistant (the ✦ button in the top bar): a chat with Claude, by text or voice. The Claude API key is entered in
   Settings → Accounts and requests go from the phone straight to the API. It finds and plays music and answers questions
   about listening history; changes to likes and playlists apply only after "Apply". The conversation lasts
-  until the app is closed.
+  until the app is closed. The same assistant runs in cmus on the computer (`cmus-b2-ask`, see Assistant in cmus below).
 
 - Lyrics: from file tags (the catalog puts them in `lyrics/<album-id>.json`). The app goes to lrclib.net only when
   the tags have no synced lyrics, and saves what it finds to `found-lyrics/` in the bucket. `tools/fetch-lyrics.py`
@@ -149,3 +149,20 @@ commit time of `HEAD` in minutes, so it keeps growing after a squash merge.
 Every push to main publishes a `vX.Y.N` release on GitHub Releases. CI signs it with the debug key from the
 `DEBUG_KEYSTORE` secret (the keystore in base64), so releases install over local builds. Bump `baseVersion` in
 `app/build.gradle.kts` when shipping notable features.
+
+## Assistant in cmus
+
+`core/` holds the assistant itself: the prompt, the tools and the conversation with Claude. The app (`Assistant.kt`) and
+`cli/`, a terminal chat for [cmus](https://github.com/buyolitsez/cmus), only give it the player: what plays, the queue,
+likes, playlists and history. A change to the assistant in `core/` works on the phone and in cmus alike.
+
+`cmus-b2-ask` plays in a running cmus through `cmus-remote`, the tracks named as `contrib/cmus-b2` of the cmus fork adds
+them, and reads and writes `state/*` in the bucket with rclone (`b2music:buyolitsez-music`). Likes and playlists are changed
+on top of the bucket copy after `y`. The key is `ANTHROPIC_API_KEY=...` in `~/.config/cmus-b2/env`; the log goes to
+`~/.cache/cmus-b2/assistant.log`. Install it on the computer with JDK 21 (no Android SDK needed):
+
+```bash
+./gradlew --configure-on-demand :cli:installDist && rm -rf ~/.local/opt/cmus-b2-ask && cp -r cli/build/install/cmus-b2-ask ~/.local/opt/
+```
+
+and run it with `contrib/cmus-b2-ask` of the cmus fork.

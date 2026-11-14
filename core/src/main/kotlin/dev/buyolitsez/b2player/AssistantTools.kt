@@ -1,8 +1,6 @@
 package dev.buyolitsez.b2player
 
-import androidx.media3.common.util.UnstableApi
-import org.json.JSONArray
-import org.json.JSONObject
+import com.fasterxml.jackson.databind.JsonNode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -11,8 +9,7 @@ import java.util.Locale
  * What the assistant can do with the player. Tracks and albums are named by short handles
  * ("t123", "a45": indices in the catalog) so tool results stay small.
  */
-@UnstableApi
-class AssistantTools(private val ui: Ui, val cat: Catalog) {
+class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
     private val trackIndex = cat.tracks.withIndex().associate { (i, t) -> t.id to i }
     private val albumIndex = cat.albums.withIndex().associate { (i, a) -> a.id to i }
 
@@ -24,22 +21,21 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
         append(handle(t)).append(" | ").append(t.artist).append(" — ").append(t.title)
         append(" | ").append(t.album.title); t.album.year?.let { append(" (").append(it).append(')') }
         append(" | ").append(genre(t.album)).append(" | ").append(formatTime(t.duration))
-        if (ui.library.isLiked(t)) append(" | liked")
+        if (host.isLiked(t)) append(" | liked")
     }
 
     private fun line(a: Album) = buildString {
         append(handle(a)).append(" | ").append(a.artist).append(" — ").append(a.title)
         a.year?.let { append(" (").append(it).append(')') }
         append(" | ").append(genre(a)).append(" | ").append(a.tracks.size).append(" tracks")
-        val liked = a.tracks.count { ui.library.isLiked(it) }
+        val liked = a.tracks.count { host.isLiked(it) }
         if (liked > 0) append(", ").append(liked).append(" liked")
     }
 
     /** Tracks named by handles; an album handle stands for all its tracks. */
-    fun resolve(arr: JSONArray?): List<Track> {
-        if (arr == null) return emptyList()
-        return (0 until arr.length()).flatMap { i ->
-            val h = arr.getString(i).trim()
+    fun resolve(arr: JsonNode): List<Track> =
+        arr.flatMap { node ->
+            val h = node.asText().trim()
             val n = h.drop(1).toIntOrNull()
             when {
                 n == null -> emptyList()
@@ -48,7 +44,6 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
                 else -> emptyList()
             }
         }.distinctBy { it.id }
-    }
 
     /** One line about the library for the system prompt: genres and artists with album counts. */
     fun librarySummary(): String {
@@ -62,33 +57,33 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
     /** Short state of the player, added to each user message. */
     fun playerState(): String {
         val now = SimpleDateFormat("yyyy-MM-dd EEE HH:mm", Locale.US).format(Date())
-        val cur = ui.currentId?.let { cat.byId[it] }
-        val queue = ui.queueIds.size
-        return "[$now. " + (if (cur != null) "Now ${if (ui.playing) "playing" else "paused"}: ${line(cur)}. Queue: $queue tracks, at ${ui.currentIndex + 1}" else "Nothing is playing") + "]"
+        val cur = host.currentId?.let { cat.byId[it] }
+        val queue = host.queueIds.size
+        return "[$now. " + (if (cur != null) "Now ${if (host.playing) "playing" else "paused"}: ${line(cur)}. Queue: $queue tracks, at ${host.currentIndex + 1}" else "Nothing is playing") + "]"
     }
 
     private fun matches(field: String, q: String?) = q.isNullOrBlank() || searchFold(q) in searchFold(field)
 
-    private fun JSONObject.str(k: String) = optString(k).takeIf { has(k) && it.isNotBlank() }
+    private fun JsonNode.str(k: String) = path(k).asText("").takeIf { it.isNotBlank() }
 
-    fun searchTracks(a: JSONObject): String {
+    fun searchTracks(a: JsonNode): String {
         val text = a.str("text"); val artist = a.str("artist"); val album = a.str("album"); val genre = a.str("genre")
-        val playlist = a.str("playlist")?.let { name -> ui.app.playlists.all.firstOrNull { it.name.equals(name, true) } ?: return "No playlist named “$name”" }
+        val playlist = a.str("playlist")?.let { name -> host.playlists.firstOrNull { it.name.equals(name, true) } ?: return "No playlist named “$name”" }
         val inPlaylist = playlist?.trackIds?.toHashSet()
-        val likedOnly = a.optBoolean("liked_only")
-        val limit = a.optInt("limit", 100).coerceIn(1, 400)
+        val likedOnly = a.path("liked_only").asBoolean()
+        val limit = a.path("limit").asInt(100).coerceIn(1, 400)
         val found = cat.tracks.filter { t ->
-            (inPlaylist == null || t.id in inPlaylist) && (!likedOnly || ui.library.isLiked(t)) &&
+            (inPlaylist == null || t.id in inPlaylist) && (!likedOnly || host.isLiked(t)) &&
                 matches(t.artist + " " + t.album.artist, artist) && matches(t.album.title, album) && matches(genre(t.album), genre) &&
                 (text.isNullOrBlank() || searchFold(text) in t.searchKey || searchFold(text) in t.album.searchKey)
         }
         return result(found.size, found.take(limit).map { line(it) })
     }
 
-    fun searchAlbums(a: JSONObject): String {
+    fun searchAlbums(a: JsonNode): String {
         val text = a.str("text"); val artist = a.str("artist"); val genre = a.str("genre")
-        val from = a.optInt("year_from", 0); val to = a.optInt("year_to", 9999)
-        val limit = a.optInt("limit", 100).coerceIn(1, 400)
+        val from = a.path("year_from").asInt(0); val to = a.path("year_to").asInt(9999)
+        val limit = a.path("limit").asInt(100).coerceIn(1, 400)
         val found = cat.albums.filter { al ->
             matches(al.artist, artist) && matches(genre(al), genre) && (text.isNullOrBlank() || searchFold(text) in al.searchKey) &&
                 (al.year ?: 0) in from..to
@@ -99,72 +94,72 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
     private fun result(total: Int, lines: List<String>) =
         if (total == 0) "Nothing found" else "$total found" + (if (lines.size < total) ", showing ${lines.size}" else "") + "\n" + lines.joinToString("\n")
 
-    fun play(a: JSONObject): String {
-        val tracks = resolve(a.optJSONArray("items"))
+    fun play(a: JsonNode): String {
+        val tracks = resolve(a.path("items"))
         if (tracks.isEmpty()) return "No such tracks or albums"
-        when (a.optString("mode", "replace")) {
-            "next" -> ui.playNext(tracks)
-            "end" -> ui.addToEnd(tracks)
-            else -> ui.play(tracks, shuffled = a.optBoolean("shuffle"))
+        when (a.path("mode").asText("replace")) {
+            "next" -> host.playNext(tracks)
+            "end" -> host.addToEnd(tracks)
+            else -> host.play(tracks, shuffled = a.path("shuffle").asBoolean())
         }
         return "OK, ${tracks.size} tracks"
     }
 
     fun queue(): String {
-        val ids = ui.queueIds
+        val ids = host.queueIds
         if (ids.isEmpty()) return "The queue is empty"
-        val from = ui.currentIndex
+        val from = host.currentIndex
         return "Queue of ${ids.size}, current is #${from + 1}. Upcoming:\n" +
             ids.drop(from).take(50).mapNotNull { cat.byId[it] }.joinToString("\n") { line(it) }
     }
 
     fun playlists(): String =
-        ui.app.playlists.all.joinToString("\n") { "${it.name} | ${it.trackIds.size} tracks" }.ifEmpty { "No playlists" }
+        host.playlists.joinToString("\n") { "${it.name} | ${it.trackIds.size} tracks" }.ifEmpty { "No playlists" }
 
     /** A change to likes or playlists, shown to the user before it is applied. */
     class Change(val title: String, val tracks: List<Track>, val apply: () -> String)
 
-    fun setLiked(a: JSONObject): Any {
-        val liked = a.optBoolean("liked", true)
-        val tracks = resolve(a.optJSONArray("items")).filter { ui.library.isLiked(it) != liked }
+    fun setLiked(a: JsonNode): Any {
+        val liked = a.path("liked").asBoolean(true)
+        val tracks = resolve(a.path("items")).filter { host.isLiked(it) != liked }
         if (tracks.isEmpty()) return "Nothing to change: all of them are already ${if (liked) "liked" else "not liked"}"
         val title = (if (liked) "Like " else "Remove like from ") + count(tracks.size)
-        return Change(title, tracks) { ui.setLiked(tracks, liked); "Done: $title" }
+        return Change(title, tracks) { host.setLiked(tracks, liked); "Done: $title" }
     }
 
-    fun createPlaylist(a: JSONObject): Any {
-        val name = a.optString("name").trim().ifEmpty { return "The playlist needs a name" }
-        val tracks = resolve(a.optJSONArray("items"))
-        return Change("Create playlist “$name” with ${count(tracks.size)}", tracks) { ui.createPlaylist(name, tracks); "Created “$name”" }
+    fun createPlaylist(a: JsonNode): Any {
+        val name = a.path("name").asText("").trim().ifEmpty { return "The playlist needs a name" }
+        val tracks = resolve(a.path("items"))
+        return Change("Create playlist “$name” with ${count(tracks.size)}", tracks) { host.createPlaylist(name, tracks); "Created “$name”" }
     }
 
-    fun addToPlaylist(a: JSONObject): Any {
-        val name = a.optString("playlist")
-        val p = ui.app.playlists.all.firstOrNull { it.name.equals(name, true) } ?: return "No playlist named “$name”"
-        val tracks = resolve(a.optJSONArray("items")).filter { it.id !in p.trackIds }
+    fun addToPlaylist(a: JsonNode): Any {
+        val name = a.path("playlist").asText("")
+        val p = host.playlists.firstOrNull { it.name.equals(name, true) } ?: return "No playlist named “$name”"
+        val tracks = resolve(a.path("items")).filter { it.id !in p.trackIds }
         if (tracks.isEmpty()) return "They are all in “${p.name}” already"
-        return Change("Add ${count(tracks.size)} to “${p.name}”", tracks) { ui.addToPlaylist(p, tracks); "Added to “${p.name}”" }
+        return Change("Add ${count(tracks.size)} to “${p.name}”", tracks) { host.addToPlaylist(p, tracks); "Added to “${p.name}”" }
     }
 
-    fun stats(a: JSONObject): String {
+    fun stats(a: JsonNode): String {
         val day = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val since = a.str("since")?.let { runCatching { day.parse(it)!!.time }.getOrNull() } ?: 0L
         val end = a.str("until")?.let { runCatching { day.parse(it)!!.time + 86_400_000 }.getOrNull() } ?: Long.MAX_VALUE
-        val by = a.optString("group_by", "track")
-        val limit = a.optInt("limit", 50).coerceIn(1, 300)
-        val plays = ui.app.history.all().filter { it.time >= since && it.time < end }.mapNotNull { p -> cat.byId[p.trackId]?.let { it to p.time } }
+        val by = a.path("group_by").asText("track")
+        val limit = a.path("limit").asInt(50).coerceIn(1, 300)
+        val plays = host.history().filter { it.time >= since && it.time < end }.mapNotNull { p -> cat.byId[p.trackId]?.let { it to p.time } }
         if (plays.isEmpty()) return "No plays in this period"
         val groups = plays.groupBy { (t, _) ->
             when (by) { "artist" -> t.artist; "album" -> handle(t.album) + " | " + t.album.artist + " — " + t.album.title; else -> line(t) }
         }.map { (k, v) -> Triple(k, v.size, v.maxOf { it.second }) }
-        val sorted = if (a.optString("sort") == "oldest") groups.sortedBy { it.third } else groups.sortedByDescending { it.second }
+        val sorted = if (a.path("sort").asText() == "oldest") groups.sortedBy { it.third } else groups.sortedByDescending { it.second }
         return "${plays.size} plays\n" + sorted.take(limit).joinToString("\n") { (k, n, last) -> "$k | $n plays, last ${day.format(Date(last))}" }
     }
 
     private fun count(n: Int) = if (n == 1) "1 track" else "$n tracks"
 
     /** Runs a tool: returns its text result, or a [Change] that waits for the user's answer. */
-    fun run(name: String, input: JSONObject): Any = when (name) {
+    fun run(name: String, input: JsonNode): Any = when (name) {
         "search_tracks" -> searchTracks(input)
         "search_albums" -> searchAlbums(input)
         "play" -> play(input)

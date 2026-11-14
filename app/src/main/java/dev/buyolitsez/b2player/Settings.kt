@@ -182,7 +182,7 @@ fun AccountsScreen(ui: Ui) {
         SettingsGroup("Assistant") {
         var claudeKey by remember { mutableStateOf(ui.assistant.apiKey) }
         FieldsBlock {
-            Text("Chat that controls the player, on ${Assistant.MODEL}. Create a key at platform.claude.com; requests are billed to it.",
+            Text("Chat that controls the player, on ${AssistantChat.MODEL}. Create a key at platform.claude.com; requests are billed to it.",
                 style = MaterialTheme.typography.bodySmall, color = Muted)
             OutlinedTextField(claudeKey, { claudeKey = it }, Modifier.fillMaxWidth(), label = { Text("Claude API key") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation())

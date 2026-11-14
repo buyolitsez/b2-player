@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "b2-player"
-include(":app")
+include(":app", ":core", ":cli")

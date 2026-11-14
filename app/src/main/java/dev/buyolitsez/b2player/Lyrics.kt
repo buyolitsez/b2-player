@@ -119,7 +119,7 @@ class LyricsRepo(private val app: App) {
 
         val numbered = lines.withIndex().filter { it.value.isNotBlank() }.joinToString("\n") { "${it.index + 1}\t${it.value.trim()}" }
         val params = MessageCreateParams.builder()
-            .model(Assistant.MODEL)
+            .model(AssistantChat.MODEL)
             .maxTokens(8000L)
             .system(TRANSLATE.replace("LANGUAGE", language))
             .addUserMessage("Song: ${t.artist} — ${t.title}\n\n$numbered")
@@ -127,7 +127,7 @@ class LyricsRepo(private val app: App) {
             .build()
         val client = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
         val message = try { client.messages().create(params) } finally { client.close() }
-        AppLog.i("lyrics", "Translation of ${t.id}, " + Assistant.usage(message.usage()))
+        AppLog.i("lyrics", "Translation of ${t.id}, " + AssistantChat.usage(message.usage()))
         val reply = message.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n")
         val byNumber = reply.lines().mapNotNull { NUMBERED.matchEntire(it.trim()) }
             .associate { it.groupValues[1].toInt() - 1 to it.groupValues[2].trim() }

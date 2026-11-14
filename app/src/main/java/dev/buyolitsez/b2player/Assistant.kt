@@ -42,28 +42,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
-import com.anthropic.client.AnthropicClient
-import com.anthropic.client.okhttp.AnthropicOkHttpClient
-import com.anthropic.core.JsonValue
-import com.anthropic.core.jsonMapper
-import com.anthropic.models.messages.CacheControlEphemeral
-import com.anthropic.models.messages.ContentBlockParam
-import com.anthropic.models.messages.MessageCreateParams
-import com.anthropic.models.messages.MessageParam
-import com.anthropic.models.messages.OutputConfig
-import com.anthropic.models.messages.StopReason
-import com.anthropic.models.messages.Tool
-import com.anthropic.models.messages.ToolResultBlockParam
-import com.anthropic.models.messages.Usage
-import com.anthropic.models.messages.WebSearchTool20260209
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 sealed interface ChatEntry {
     data class User(val text: String) : ChatEntry
@@ -78,29 +60,55 @@ sealed interface ChatEntry {
     }
 }
 
-/** Chat with Claude that controls the player through [AssistantTools]. The conversation lives until the app is closed. */
+/** The assistant's chat screen state over [AssistantChat]. The conversation lives until the app is closed. */
 @UnstableApi
 class Assistant(private val ui: Ui) {
     private val prefs = ui.context.getSharedPreferences("assistant", android.content.Context.MODE_PRIVATE)
     var apiKey: String
         get() = prefs.getString("apiKey", "")!!
-        set(v) { prefs.edit().putString("apiKey", v.trim()).apply(); client = null }
+        set(v) { prefs.edit().putString("apiKey", v.trim()).apply() }
 
     val entries = mutableStateListOf<ChatEntry>()
     var busy by mutableStateOf(false); private set
     /** Messages written while the assistant is busy, sent together when its turn ends. */
     val queued = mutableStateListOf<String>()
 
-    private var client: AnthropicClient? = null
-    private val messages = ArrayList<MessageParam>()
-    private var tools: AssistantTools? = null
-    private var system = ""
     private var confirmWait = 0L
     private var job: Job? = null
 
+    private val chat = AssistantChat(object : AssistantHost {
+        override val intro = """
+            You are the assistant inside B2 Player, the user's personal music player on Android. The chat is small: keep replies
+            short. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links. The queue has its own liked filter.
+        """.trimIndent()
+        override val currentId get() = ui.currentId
+        override val playing get() = ui.playing
+        override val queueIds get() = ui.queueIds
+        override val currentIndex get() = ui.currentIndex
+        override fun play(tracks: List<Track>, shuffled: Boolean) { ui.play(tracks, shuffled = shuffled) }
+        override fun playNext(tracks: List<Track>) = ui.playNext(tracks)
+        override fun addToEnd(tracks: List<Track>) = ui.addToEnd(tracks)
+        override fun isLiked(t: Track) = ui.library.isLiked(t)
+        override fun setLiked(tracks: List<Track>, liked: Boolean) = ui.setLiked(tracks, liked)
+        override val playlists get() = ui.app.playlists.all
+        override fun createPlaylist(name: String, tracks: List<Track>) { ui.createPlaylist(name, tracks) }
+        override fun addToPlaylist(p: Playlist, tracks: List<Track>) = ui.addToPlaylist(p, tracks)
+        override fun history() = ui.app.history.all()
+        override fun reply(text: String, error: Boolean) { entries.add(ChatEntry.Reply(text, error)) }
+        override suspend fun confirm(change: AssistantTools.Change): Boolean {
+            val confirm = ChatEntry.Confirm(change)
+            entries.add(confirm)
+            val asked = SystemClock.elapsedRealtime()
+            return confirm.decision.await().also { confirmWait += SystemClock.elapsedRealtime() - asked }
+        }
+        override fun log(message: String, error: Throwable?) {
+            if (error != null) AppLog.w("assistant", message, error) else AppLog.i("assistant", message)
+        }
+    })
+
     fun clear() {
         if (busy) return
-        entries.clear(); messages.clear(); tools = null
+        entries.clear(); chat.clear()
     }
 
     fun stop() { job?.cancel() }
@@ -109,31 +117,19 @@ class Assistant(private val ui: Ui) {
         val cat = ui.app.catalog.value
         if (text.isBlank() || cat == null) return
         if (busy) { queued.add(text.trim()); return }
-        // Handles are catalog indices: a reloaded catalog starts a new conversation.
-        if (tools?.let { it.cat !== cat } != false) {
-            messages.clear()
-            tools = AssistantTools(ui, cat).also { system = SYSTEM + "\n\n" + it.librarySummary() }
-        }
-        val t = tools!!
         entries.add(ChatEntry.User(text.trim()))
-        val start = messages.size
-        messages.add(MessageParam.ofUser(t.playerState() + "\n" + text.trim()))
         busy = true
         val started = SystemClock.elapsedRealtime()
         confirmWait = 0L
+        chat.apiKey = apiKey
         job = ui.scope.launch {
             try {
-                converse(t)
+                chat.send(cat, text.trim())
                 entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
             } catch (e: CancellationException) {
-                // Keep the user's message so a correction sent next is read with it.
-                while (messages.size > start + 1) messages.removeAt(messages.size - 1)
                 entries.filterIsInstance<ChatEntry.Confirm>().forEach { it.answer(false) }
                 entries.add(ChatEntry.Reply("Stopped", error = true))
             } catch (e: Exception) {
-                AppLog.w("assistant", "Request failed", e)
-                // Drop the unfinished turn, so the next message starts from a valid conversation.
-                while (messages.size > start) messages.removeAt(messages.size - 1)
                 entries.add(ChatEntry.Reply(e.message ?: e.toString(), error = true))
                 entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
             } finally {
@@ -141,93 +137,6 @@ class Assistant(private val ui: Ui) {
                 if (queued.isNotEmpty()) send(queued.joinToString("\n").also { queued.clear() })
             }
         }
-    }
-
-    private suspend fun converse(t: AssistantTools) {
-        val c = client ?: AnthropicOkHttpClient.builder().apiKey(apiKey).build().also { client = it }
-        while (true) {
-            val params = MessageCreateParams.builder()
-                .model(MODEL)
-                .maxTokens(16000L)
-                .system(system)
-                .cacheControl(CacheControlEphemeral.builder().build())
-                .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.MEDIUM).build())
-                .apply { TOOLS.forEach { addTool(it) } }
-                .addTool(WebSearchTool20260209.builder().maxUses(3L).build())
-                // A request the model refuses is retried on a fallback model chosen by the API.
-                .putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
-                .putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
-                .messages(messages.toList())
-                .build()
-            // Async, so that Stop doesn't wait for the response.
-            val response = c.async().messages().create(params).await()
-            AppLog.i("assistant", usage(response.usage()))
-            messages.add(response.toParam())
-            response.content().mapNotNull { it.text().orElse(null)?.text()?.trim() }.filter { it.isNotEmpty() }
-                .forEach { entries.add(ChatEntry.Reply(it)) }
-            when (response.stopReason().orElse(null)) {
-                StopReason.TOOL_USE -> Unit
-                StopReason.PAUSE_TURN -> continue   // a long web search: send the conversation back to let it finish
-                StopReason.REFUSAL -> { entries.add(ChatEntry.Reply("Claude declined this request", error = true)); return }
-                StopReason.MAX_TOKENS -> { entries.add(ChatEntry.Reply("The answer was cut off", error = true)); return }
-                else -> return
-            }
-            val results = response.content().mapNotNull { it.toolUse().orElse(null) }.map { use ->
-                val input = JSONObject(jsonMapper().writeValueAsString(use._input()))
-                AppLog.d("assistant", "${use.name()} $input")
-                val out = runCatching { runTool(t, use.name(), input) }
-                    .getOrElse { AppLog.w("assistant", "Tool ${use.name()} failed", it); "Error: ${it.message}" }
-                ContentBlockParam.ofToolResult(ToolResultBlockParam.builder().toolUseId(use.id()).content(out).build())
-            }
-            messages.add(MessageParam.ofUserOfContentBlockParams(results))
-        }
-    }
-
-    private suspend fun runTool(t: AssistantTools, name: String, input: JSONObject): String {
-        // Searches go over 18k tracks: off the main thread. The rest touches the player.
-        val r = if (name.startsWith("search") || name == "listening_stats") withContext(Dispatchers.Default) { t.run(name, input) } else t.run(name, input)
-        if (r !is AssistantTools.Change) return r as String
-        val confirm = ChatEntry.Confirm(r)
-        entries.add(confirm)
-        val asked = SystemClock.elapsedRealtime()
-        val ok = confirm.decision.await()
-        confirmWait += SystemClock.elapsedRealtime() - asked
-        return if (ok) r.apply() else "The user cancelled this change"
-    }
-
-    companion object {
-        const val MODEL = "claude-sonnet-5-5"
-
-        /** Token counts of a response for the log, to see what a request costs and whether the cache works. */
-        fun usage(u: Usage) = "tokens: in ${u.inputTokens()}, cache read ${u.cacheReadInputTokens().orElse(0)}, " +
-            "cache write ${u.cacheCreationInputTokens().orElse(0)}, out ${u.outputTokens()}"
-
-        private val TOOLS = AssistantTools.DEFINITIONS.map { (name, description, schema) ->
-            val node = jsonMapper().readTree(schema)
-            val props = Tool.InputSchema.Properties.builder()
-            node["properties"].fields().forEach { (k, v) -> props.putAdditionalProperty(k, JsonValue.fromJsonNode(v)) }
-            Tool.builder().name(name).description(description)
-                .inputSchema(Tool.InputSchema.builder().properties(props.build()).required(node["required"]?.map { it.asText() } ?: emptyList()).build())
-                .build()
-        }
-
-        private val SYSTEM = """
-            You are the assistant inside B2 Player, the user's personal music player on Android. The library is the user's own
-            collection; you control the player with the tools. Reply in the user's language (usually Russian), briefly: the chat
-            is small. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links.
-
-            - Act, don't ask: "включи альбом Янки" means find a Янка Дягилева album and play it. Ask only when the request is
-              truly ambiguous and a wrong guess would be annoying.
-            - Find tracks and albums with the search tools; the handles they return (t…, a…) are what the other tools take.
-              Artist and album names in the library may be in Russian or English: try both spellings if nothing is found.
-            - To pick music by mood ("что-нибудь грустное"), search the whole library, not only liked tracks, choose by what you
-              know about the songs and artists, and play your choice. Say in one line what you put on. Use liked_only only
-              when the user asks for liked music: the queue has its own liked filter.
-            - Likes and playlists are the user's data: set_liked, create_playlist and add_to_playlist show the user the change,
-              and the tool result says whether they applied or cancelled it. Don't ask for confirmation in text as well.
-            - Each user message starts with the date and what is playing, in brackets.
-            - Use web search for questions about music, artists and albums that you can't answer confidently.
-        """.trimIndent()
     }
 }
 
