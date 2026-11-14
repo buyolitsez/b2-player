@@ -344,6 +344,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         }
     }
     AddToPlaylistDialog(ui)
+    DeleteDialog(ui)
     TrackInfoDialog(ui)
     TrackSheet(ui)
 }

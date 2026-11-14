@@ -78,6 +78,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** The track whose actions sheet is open; [extra] adds rows of the screen it was opened from. */
     class TrackMenuRequest(val track: Track, val queueIndex: Int?, val extra: (@androidx.compose.runtime.Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit)?)
     var trackMenu by mutableStateOf<TrackMenuRequest?>(null)
+    /** Tracks the "Delete from bucket" dialog asks about; [back] leaves the screen of the album or artist after. */
+    class DeleteRequest(val title: String, val tracks: List<Track>, val back: Boolean)
+    var deleting by mutableStateOf<DeleteRequest?>(null)
     /** The "New playlist" dialog is open. */
     var newPlaylist by mutableStateOf(false)
 
@@ -349,6 +352,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun editPlaylist(id: String, f: (Playlist) -> Playlist) { app.playlists.update(id, f); version++; syncPlaylists() }
     fun deletePlaylist(id: String) { app.playlists.delete(id); version++; syncPlaylists() }
+
+    fun deleteFromBucket(tracks: List<Track>) = scope.launch {
+        toast("Deleting…")
+        runCatching { withContext(Dispatchers.IO) { app.deleteFromBucket(tracks) } }
+            .onSuccess { n -> version++; toast(if (n == 1) "Deleted 1 track" else "Deleted $n tracks") }
+            .onFailure { AppLog.e("delete", "Delete from bucket failed", it); toast("Couldn't delete: ${it.message}") }
+    }
 
     fun saveQueueAsPlaylist() {
         val cat = app.catalog.value ?: return

@@ -135,6 +135,27 @@ class B2(private val context: Context) {
         post("${a.apiUrl}/b2api/v2/b2_delete_file_version", a.token, JSONObject().put("fileName", key).put("fileId", fileId))
     }
 
+    /** Hides a file: it is no longer listed or served, and the bucket's lifecycle rule removes it later. */
+    fun hide(key: String) = reauthorizing {
+        val a = auth()
+        post("${a.apiUrl}/b2api/v2/b2_hide_file", a.token, JSONObject().put("bucketId", bucketId(a)).put("fileName", key))
+    }
+
+    /** Names of the files under [prefix]. */
+    fun list(prefix: String): List<String> = reauthorizing {
+        val a = auth()
+        val names = ArrayList<String>()
+        var start: String? = prefix
+        while (start != null) {
+            val r = post("${a.apiUrl}/b2api/v2/b2_list_file_names", a.token,
+                JSONObject().put("bucketId", bucketId(a)).put("prefix", prefix).put("startFileName", start).put("maxFileCount", 1000))
+            val files = r.getJSONArray("files")
+            for (i in 0 until files.length()) names += files.getJSONObject(i).getString("fileName")
+            start = r.optString("nextFileName").takeIf { !r.isNull("nextFileName") }
+        }
+        names
+    }
+
     /** Small object as bytes, or null when it does not exist. */
     fun fetchOrNull(key: String): ByteArray? = reauthorizing {
         val (url, token) = request(key)
