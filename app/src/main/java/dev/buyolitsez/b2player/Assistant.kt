@@ -236,7 +236,7 @@ fun AssistantScreen(ui: Ui) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Enter a Claude API key in Settings to use the assistant", color = Muted, textAlign = TextAlign.Center)
             Spacer(Modifier.height(12.dp))
-            Pill("Open settings", active = true) { ui.open(Screen.Settings) }
+            Pill("Open accounts", active = true) { ui.open(Screen.Settings); ui.open(Screen.Accounts) }
         }
         return
     }
