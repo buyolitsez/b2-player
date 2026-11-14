@@ -17,8 +17,14 @@ import java.util.concurrent.Executors
 
 /** A track and position written by the phone or by cmus on the computer ("arch"). */
 data class Handoff(val trackId: String, val positionMs: Long, val playing: Boolean, val time: Long, val device: String) {
-    /** A track still playing on the other device has moved on since it was written. */
-    fun positionNow() = if (playing) positionMs + (System.currentTimeMillis() - time).coerceAtLeast(0) else positionMs
+    /**
+     * A track still playing on the other device has moved on since it was written. Past its end, the
+     * other device stopped without saying so (cmus quit while playing): the written position is the better guess.
+     */
+    fun positionNow(durationMs: Long): Long {
+        val moved = positionMs + (System.currentTimeMillis() - time).coerceAtLeast(0)
+        return if (playing && moved < durationMs) moved else positionMs
+    }
 }
 
 /**
@@ -68,7 +74,7 @@ fun ResumeBanner(ui: Ui, cat: Catalog?) {
     val h = handoffs.offer ?: return
     val t = cat?.byId?.get(h.trackId) ?: return
     if (ui.playing) return
-    val pos = h.positionNow().coerceAtMost((t.duration * 1000).toLong())
+    val pos = h.positionNow((t.duration * 1000).toLong())
     Row(Modifier.fillMaxWidth().background(Gray1).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Continue from ${h.device}", style = MaterialTheme.typography.bodySmall, color = Muted)
