@@ -68,9 +68,6 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
 
         // ---------- library ----------
         SettingsHeader("Library")
-        SettingSwitch("Offline only", "Show only downloaded and cached tracks", app.prefs.offlineOnly.collectAsState().value) {
-            app.prefs.setOfflineOnly(it); ui.version++
-        }
         SettingSwitch("Show albums as a grid", null, p.albumGrid)
         SettingChoice("Grid columns", null, listOf(2, 3, 4), p.gridColumns.value, { "$it" }) { p.gridColumns.set(it) }
         SettingChoice("Open on start", null, Tab.entries.map { it.name }, p.startTab.value,
