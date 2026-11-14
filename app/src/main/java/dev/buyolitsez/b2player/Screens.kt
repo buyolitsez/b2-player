@@ -150,7 +150,12 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
     Column {
         FilterField(ui, q) { q = it }
-        AlbumGrid(ui, shown, header = { PlayButtons(ui, "artist:$name", name, tracks, count = true) }, showArtist = false)
+        AlbumGrid(ui, shown, header = {
+            PlayButtons(ui, "artist:$name", name, tracks, count = true, menu = { close ->
+                DropdownMenuItem({ Text("Delete from bucket") }, { close(); ui.deleting = Ui.DeleteRequest(name, tracks, true) },
+                    leadingIcon = { Icon(Icons.Default.DeleteForever, null) })
+            })
+        }, showArtist = false)
     }
 }
 
@@ -302,7 +307,10 @@ fun AlbumScreen(ui: Ui, a: Album) {
                     )
                     RatingPicker(ui.rating(a)) { ui.setRating(a, it) }
                 }
-                Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, a.tracks) }
+                Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, a.tracks, menu = { close ->
+                    DropdownMenuItem({ Text("Delete from bucket") }, { close(); ui.deleting = Ui.DeleteRequest(a.title, a.tracks, true) },
+                        leadingIcon = { Icon(Icons.Default.DeleteForever, null) })
+                }) }
             }
         }
         itemsIndexed(a.tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(a.tracks, i) }) }

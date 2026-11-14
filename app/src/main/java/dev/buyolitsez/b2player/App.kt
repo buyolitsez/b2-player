@@ -160,6 +160,48 @@ class App : Application() {
     }
 
     /**
+     * Deletes the files of [tracks] from the bucket, with the other tracks of a CUE file and, when
+     * nothing is left of an album's folder, its other files. They are hidden (the bucket's lifecycle
+     * rule removes them after 30 days), dropped from the catalog and listed in state/deleted.tsv,
+     * from which cmus-b2 on the computer trashes their local copies. Returns the number of tracks deleted.
+     */
+    fun deleteFromBucket(tracks: List<Track>): Int {
+        val paths = tracks.map { it.path }.toSet()
+        // the published catalog, not the loaded one, so that nothing published since is lost
+        val json = org.json.JSONObject(java.util.zip.GZIPInputStream(b2.open("catalog.json.gz").inputStream).use { it.readBytes().decodeToString() })
+        val prefix = json.optString("musicPrefix", "music/")
+        val albums = json.getJSONArray("albums")
+        val kept = org.json.JSONArray()
+        val dirs = HashSet<String>(); val left = HashSet<String>()
+        var deleted = 0
+        for (i in 0 until albums.length()) {
+            val al = albums.getJSONObject(i)
+            val all = al.getJSONArray("tracks")
+            val keep = org.json.JSONArray()
+            for (j in 0 until all.length()) {
+                val path = all.getJSONObject(j).getString("path")
+                if (path in paths) { dirs += al.getString("dir"); deleted++ } else { keep.put(all.getJSONObject(j)); left += path }
+            }
+            if (keep.length() > 0) kept.put(al.put("tracks", keep))
+        }
+        json.put("albums", kept)
+        val hide = paths.toMutableSet()
+        for (d in dirs) if (left.none { it.startsWith("$d/") }) hide += b2.list("$prefix$d/").map { it.removePrefix(prefix) }
+        hide.forEach { b2.hide(prefix + it) }
+        val bytes = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.GZIPOutputStream(out).use { it.write(json.toString().toByteArray()) }
+        }.toByteArray()
+        b2.upload("catalog.json.gz", bytes, "application/gzip")
+        val listed = b2.fetchOrNull("state/deleted.tsv")?.decodeToString().orEmpty()
+        b2.upload("state/deleted.tsv", (listed + hide.joinToString("") { "$it\n" }).toByteArray(), "text/tab-separated-values")
+        library.catalogFile.writeBytes(bytes)
+        library.catalogSha = java.security.MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        catalog.value?.tracks?.filter { it.path in paths }?.forEach { library.deleteDownload(it) }
+        catalog.value = Catalog.parse(bytes)
+        return deleted
+    }
+
+    /**
      * Copies the log to logs/<date>.log in the bucket when there were problems since the last
      * upload (or when forced). Only the newest version of each day's file is kept.
      */

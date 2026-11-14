@@ -283,8 +283,29 @@ fun TrackSheet(ui: Ui) {
             if (here != Screen.ArtistView(t.album.artist)) MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Library) }
             if (here != Screen.FolderView(t.album.dir)) MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Library) }
             MenuItem("Track info", Icons.Default.Info, close) { ui.trackInfo = t }
+            MenuItem("Delete from bucket", Icons.Default.DeleteForever, close) { ui.deleting = Ui.DeleteRequest(t.title, listOf(t), false) }
         }
     }
+}
+
+/** Asks before deleting [Ui.deleting] from the bucket, with the other tracks of their files. */
+@UnstableApi
+@Composable
+fun DeleteDialog(ui: Ui) {
+    val req = ui.deleting ?: return
+    val all = remember(req) {
+        val paths = req.tracks.map { it.path }.toSet()
+        ui.app.catalog.value?.tracks.orEmpty().filter { it.path in paths }
+    }
+    AlertDialog(
+        { ui.deleting = null }, containerColor = Gray2, title = { Text("Delete “${req.title}” from the bucket?") },
+        text = {
+            val count = if (all.size == 1) "1 track" else "${all.size} tracks"
+            Text("$count, ${formatSize(all.distinctBy { it.path }.sumOf { it.size })}. The bucket keeps deleted files for 30 days.")
+        },
+        confirmButton = { TextButton({ ui.deleting = null; if (req.back) ui.back(); ui.deleteFromBucket(all) }) { Text("Delete") } },
+        dismissButton = { TextButton({ ui.deleting = null }) { Text("Cancel") } },
+    )
 }
 
 /** Dialog for "Add to playlist…": pick a playlist or create one. */
