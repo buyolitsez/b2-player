@@ -284,7 +284,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         screen == Screen.Downloads -> DownloadsScreen(ui, c)
                         screen == Screen.Assistant -> AssistantScreen(ui)
                         screen == Screen.EqualizerView -> EqualizerScreen(ui)
-                        screen is Screen.AlbumView -> AlbumScreen(ui, screen.album)
+                        // the album as in the current catalog, so tracks deleted from it leave the screen
+                        screen is Screen.AlbumView -> AlbumScreen(ui, c.albums.find { it.id == screen.album.id } ?: screen.album)
                         screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
                         screen is Screen.GenreView -> GenreScreen(ui, c, screen.name)
                         screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
