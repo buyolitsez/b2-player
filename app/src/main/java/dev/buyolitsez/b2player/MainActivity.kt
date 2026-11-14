@@ -20,6 +20,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -137,8 +138,6 @@ private val tabIcons: Map<Tab, ImageVector> = mapOf(
 @Composable
 fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
-    val offline = ui.offlineOnly
-    LaunchedEffect(Unit) { ui.watchOffline() }
     val stack = ui.stack()
     val screen = stack.last()
     // Back first closes the keyboard, then goes back.
@@ -198,7 +197,6 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     },
                     navigationIcon = { if (stack.size > 1) IconButton({ ui.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                     actions = {
-                        if (offline) Icon(Icons.Default.CloudOff, null, Modifier.padding(end = 4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
                         if (hasFilter) IconButton({ ui.filterOpen = !ui.filterOpen }) { Icon(Icons.Default.Search, "Search in this list") }
                         if (screen is Screen.ArtistView || screen is Screen.GenreView) {
                             IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
@@ -223,9 +221,6 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
                             DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
                                 if (root && ui.tab == Tab.Playlists) DropdownMenuItem({ Text("Import .m3u") }, { menu = false; importM3u() }, leadingIcon = { Icon(Icons.Default.FileOpen, null) })
-                                DropdownMenuItem({ Text(if (offline) "Turn off offline only" else "Offline only") },
-                                    { menu = false; ui.app.prefs.setOfflineOnly(!offline); ui.version++ },
-                                    leadingIcon = { Icon(Icons.Default.CloudOff, null) })
                                 DropdownMenuItem({ Text("Downloads") }, { menu = false; ui.open(Screen.Downloads) }, leadingIcon = { Icon(Icons.Default.Download, null) })
                                 DropdownMenuItem({ Text("Reload library") }, { menu = false; ui.refreshCatalog() }, leadingIcon = { Icon(Icons.Default.Sync, null) })
                                 DropdownMenuItem({ Text("Settings") }, { menu = false; ui.open(Screen.Settings) }, leadingIcon = { Icon(Icons.Default.Settings, null) })
@@ -290,10 +285,18 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         screen == Screen.HistoryView -> HistoryScreen(ui, c)
                         else -> when (ui.tab) {
                             Tab.Library -> Column {
-                                Row(
-                                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
+                                Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
+                                    // The whole library, in order or shuffled.
+                                    SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 24.dp) { ui.play(c.tracks, shuffled = true) }
+                                    Box(
+                                        Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(c.tracks) },
+                                        Alignment.Center,
+                                    ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
+                                }
                                 when (ui.section) {
                                     LibrarySection.Albums -> AlbumsTab(ui, c)
                                     LibrarySection.Artists -> ArtistsTab(ui, c)

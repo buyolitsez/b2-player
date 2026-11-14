@@ -215,7 +215,6 @@ class Library(context: Context, private val cache: Cache) {
     fun offlineFile(path: String) = File(offlineDir, path)
     fun isDownloaded(t: Track) = offlineFile(t.path).exists()
     fun isCached(t: Track) = t.size > 0 && cache.getCachedBytes(uriFor(t.path).toString(), 0, t.size) >= t.size
-    fun availableOffline(t: Track) = isDownloaded(t) || isCached(t)
 
     fun deleteDownload(t: Track) {
         val f = offlineFile(t.path)
@@ -259,6 +258,11 @@ class Library(context: Context, private val cache: Cache) {
     var currentQueue: SavedQueue?
         get() = prefs.getString("currentQueue", null)?.let { queueFrom(JSONObject(it)) }
         set(q) = prefs.edit().putString("currentQueue", q?.let { queueJson(it).toString() }).apply()
+
+    /** Ids of the queue before the queue filter, see [Ui.setQueueFilter]. */
+    var queueSource: List<String>
+        get() = prefs.getString("queueSource", "")!!.split('\n').filter { it.isNotEmpty() }
+        set(ids) = prefs.edit().putString("queueSource", ids.joinToString("\n")).apply()
 
     // ---------- media items ----------
 
