@@ -5,6 +5,17 @@ bucket as plain files (originals, no transcoding or encryption) and the player s
 from B2. There is no server: the phone talks to B2 itself, and the catalog, covers and lyrics are
 prepared in advance by a script on the computer that holds the library.
 
+<p>
+  <img src="docs/screenshots/library.jpg" width="32%" alt="Library">
+  <img src="docs/screenshots/nowplaying.jpg" width="32%" alt="Now playing">
+  <img src="docs/screenshots/album.jpg" width="32%" alt="Album">
+</p>
+<p>
+  <img src="docs/screenshots/queue.jpg" width="32%" alt="Queue">
+  <img src="docs/screenshots/playlists.jpg" width="32%" alt="Playlists">
+  <img src="docs/screenshots/search.jpg" width="32%" alt="Search">
+</p>
+
 ```
 <bucket>/
   music/<same as the music folder>  originals: FLAC, MP3, M4A (ALAC), ...
@@ -80,10 +91,10 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
 - Playlists, `.m3u` import (e.g. from Musicolet): tracks are matched by file name and folder, then by `#EXTINF` "artist - title".
 - A play counts after half the track or 4 minutes (tracks shorter than 30 s don't count); the same rule applies
   to history and Last.fm scrobbling; likes and unlikes go to Last.fm as love/unlove. The Last.fm API key and
-  login are entered in settings, the password is not stored.
+  login are entered in Settings → Accounts, the password is not stored.
 
 - Assistant (the ✦ button in the top bar): a chat with Claude, by text or voice. The Claude API key is entered in
-  settings and requests go from the phone straight to the API. It finds and plays music and answers questions
+  Settings → Accounts and requests go from the phone straight to the API. It finds and plays music and answers questions
   about listening history; changes to likes and playlists apply only after "Apply". The conversation lasts
   until the app is closed.
 
@@ -103,7 +114,7 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
 ## Install
 
 A ready arm64 APK (Android 10+) is in [Releases](../../releases/latest). On first launch, enter the B2 key's
-keyID and applicationKey and the bucket name in settings. The key needs Read and Write access so that likes,
+keyID and applicationKey and the bucket name in Settings → Accounts (it opens by itself). The key needs Read and Write access so that likes,
 playlists and history can sync.
 
 Build (JDK 21, Android SDK):
