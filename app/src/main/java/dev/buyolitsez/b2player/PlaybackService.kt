@@ -94,6 +94,10 @@ class PlaybackService : MediaSessionService() {
                 switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
+                if (player.playWhenReady && item != null) app.handoffs.write(app.b2, item.mediaId, 0, true)
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                player.currentMediaItem?.let { app.handoffs.write(app.b2, it.mediaId, player.currentPosition, playWhenReady) }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }

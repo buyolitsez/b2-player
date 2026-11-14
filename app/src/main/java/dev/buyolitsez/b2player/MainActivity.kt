@@ -42,12 +42,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
     private lateinit var ui: Ui
+    private var handoffJob: Job? = null
     private val importM3u = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) ui.importM3u(uris)
     }
@@ -95,6 +99,15 @@ class MainActivity : ComponentActivity() {
             ui.sync(c)
             ui.controller = c
         }, MoreExecutors.directExecutor())
+        // What cmus played meanwhile, for the Resume banner.
+        val app = application as App
+        if (app.b2.settings.complete) handoffJob = lifecycleScope.launch {
+            while (true) {
+                runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
+                    .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
+                delay(60_000)
+            }
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -104,6 +117,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        handoffJob?.cancel()
         ui.controller?.release(); ui.controller = null
         (application as App).uploadLogs()
         super.onStop()
@@ -214,6 +228,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         bottomBar = {
             // Above the keyboard when it is open, so the tabs, mini player and messages stay visible.
             Column(Modifier.background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
+                ResumeBanner(ui, cat)
                 if (ui.tab != Tab.Now || screen != Screen.Root) MiniPlayer(ui, cat)
                 HorizontalDivider(color = Gray2)
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {

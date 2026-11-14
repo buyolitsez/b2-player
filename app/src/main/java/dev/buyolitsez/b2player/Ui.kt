@@ -201,7 +201,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     }
 
     /** Replaces the queue; the old one can be brought back from the snackbar. */
-    fun play(tracks: List<Track>, index: Int, shuffled: Boolean = false) = scope.launch {
+    fun play(tracks: List<Track>, index: Int, shuffled: Boolean = false, positionMs: Long = 0) = scope.launch {
         val c = controller ?: return@launch
         val list = tracks.filter { visible(it) }
         if (list.isEmpty()) { toast("Nothing here is available offline"); return@launch }
@@ -214,7 +214,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         // A file check per track: for a 2600-track list that is too slow for the main thread.
         val items = withContext(Dispatchers.IO) { list.map { library.mediaItem(it) } }
         if (controller !== c) return@launch
-        c.setMediaItems(items, if (shuffled) list.indices.random() else start, 0)
+        c.setMediaItems(items, if (shuffled) list.indices.random() else start, if (shuffled) 0 else positionMs)
         c.prepare(); c.play()
         if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
             scope.launch {
