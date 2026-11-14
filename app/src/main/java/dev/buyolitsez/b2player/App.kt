@@ -95,6 +95,7 @@ class App : Application() {
     lateinit var playlists: Playlists
     lateinit var ratings: Ratings
     lateinit var history: History
+    lateinit var handoffs: Handoffs
     lateinit var lastFm: LastFm
     lateinit var audioFx: AudioFx
     lateinit var lyrics: LyricsRepo
@@ -176,6 +177,7 @@ class App : Application() {
         playlists = Playlists(this)
         ratings = Ratings(this)
         history = History(this)
+        handoffs = Handoffs(this)
         lastFm = LastFm(this)
         audioFx = AudioFx(this)
         lyrics = LyricsRepo(this)

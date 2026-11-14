@@ -179,7 +179,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
      * Replaces the queue; the old one can be brought back from the snackbar. [index] is the tapped
      * track, which plays even when the queue filter leaves it out; without it the queue starts at the top.
      */
-    fun play(tracks: List<Track>, index: Int = -1, shuffled: Boolean = false) = scope.launch {
+    fun play(tracks: List<Track>, index: Int = -1, shuffled: Boolean = false, positionMs: Long = 0) = scope.launch {
         val c = controller ?: return@launch
         val tapped = tracks.getOrNull(index)
         val list = tracks.filter { it == tapped || passes(it) }
@@ -194,7 +194,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val items = withContext(Dispatchers.IO) { list.map { library.mediaItem(it) } }
         if (controller !== c) return@launch
         library.queueSource = tracks.map { it.id }
-        c.setMediaItems(items, if (shuffled) list.indices.random() else start, 0)
+        c.setMediaItems(items, if (shuffled) list.indices.random() else start, if (shuffled) 0 else positionMs)
         c.prepare(); c.play()
         if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
             scope.launch {
