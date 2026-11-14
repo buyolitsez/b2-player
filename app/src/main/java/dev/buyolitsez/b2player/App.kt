@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -113,6 +114,9 @@ class App : Application() {
     /** Bumped on every like or unlike, from the app or the media notification. */
     val likesChanged = MutableStateFlow(0)
 
+    /** Syncs likes with the bucket; likes made in cmus re-read the lists. */
+    fun syncLikes() { if (library.syncLikes(b2)) likesChanged.update { it + 1 } }
+
     /** Likes or unlikes tracks: downloads or deletes them as set, syncs likes and mirrors them to Last.fm. */
     fun setLiked(tracks: List<Track>, liked: Boolean) {
         val changed = tracks.filter { library.isLiked(it) != liked }
@@ -130,7 +134,7 @@ class App : Application() {
                 .distinctBy { it.path }.forEach { library.deleteDownload(it) }
         }
         likesChanged.value++
-        scope.launch(Dispatchers.IO) { runCatching { library.syncLikes(b2) }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }
+        scope.launch(Dispatchers.IO) { runCatching { syncLikes() }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }
         if (lastFm.connected) scope.launch(Dispatchers.IO) {
             changed.forEach { t -> runCatching { lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
         }

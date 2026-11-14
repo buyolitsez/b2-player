@@ -177,32 +177,36 @@ class Library(context: Context, private val cache: Cache) {
         val plus = set("liked+").toMutableSet(); val minus = set("liked-").toMutableSet()
         if (liked) { minus.remove(t.id); if (!t.likedInCatalog) plus.add(t.id) }
         else { plus.remove(t.id); if (t.likedInCatalog) minus.add(t.id) }
-        prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus).putBoolean("likesDirty", true).apply()
+        prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus).apply()
     }
 
     /**
-     * Local changes not yet uploaded win; otherwise the bucket copy wins. Likes are stored as
-     * differences from the catalog's "liked" flags, so catalog rebuilds keep them.
+     * Puts the local changes since the last sync on top of the bucket copy, so likes made in cmus
+     * meanwhile are kept, and uploads the result if it differs. Likes are stored as differences
+     * from the catalog's "liked" flags, so catalog rebuilds keep them. Returns whether local likes changed.
      */
     @Synchronized
-    fun syncLikes(b2: B2) {
-        // Installs from before syncing have local likes but no flag: upload them first.
-        val (dirty, plus, minus) = synchronized(likesLock) {
-            Triple(prefs.getBoolean("likesDirty", set("liked+").isNotEmpty() || set("liked-").isNotEmpty()), set("liked+").toSet(), set("liked-").toSet())
+    fun syncLikes(b2: B2): Boolean {
+        val (plus, minus) = synchronized(likesLock) { set("liked+").toSet() to set("liked-").toSet() }
+        val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
+        fun arr(k: String) = j?.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+        val remotePlus = arr("added"); val remoteMinus = arr("removed")
+        // Without a base yet (first sync on this version) the local likes win, as before.
+        fun base(name: String, remote: Set<String>) = if (prefs.contains(name)) set(name).toSet() else remote
+        fun merge(remote: Set<String>, base: Set<String>, local: Set<String>) = remote + (local - base) - (base - local)
+        val newPlus = merge(remotePlus, base("synced+", remotePlus), plus)
+        val newMinus = merge(remoteMinus, base("synced-", remoteMinus), minus)
+        if (newPlus != remotePlus || newMinus != remoteMinus) {
+            val out = JSONObject().put("version", 1).put("added", JSONArray(newPlus.sorted())).put("removed", JSONArray(newMinus.sorted()))
+            b2.upload(LIKES, out.toString(1).toByteArray(), "application/json")
         }
-        if (dirty) {
-            val j = JSONObject().put("version", 1).put("added", JSONArray(plus.sorted())).put("removed", JSONArray(minus.sorted()))
-            b2.upload(LIKES, j.toString(1).toByteArray(), "application/json")
-            // A like made during the upload keeps the flag, so it goes up with the next sync.
-            synchronized(likesLock) { if (set("liked+") == plus && set("liked-") == minus) prefs.edit().putBoolean("likesDirty", false).apply() }
-        } else {
-            val bytes = b2.fetchOrNull(LIKES) ?: return
-            val j = JSONObject(bytes.decodeToString())
-            fun arr(k: String) = j.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-            synchronized(likesLock) {
-                if (prefs.getBoolean("likesDirty", false)) return   // liked something while downloading: keep it
-                prefs.edit().putStringSet("liked+", arr("added")).putStringSet("liked-", arr("removed")).apply()
-            }
+        return synchronized(likesLock) {
+            // A like made during the sync stays on top; the sync it started uploads it.
+            val localPlus = merge(newPlus, plus, set("liked+")); val localMinus = merge(newMinus, minus, set("liked-"))
+            val changed = localPlus != set("liked+") || localMinus != set("liked-")
+            prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
+                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).remove("likesDirty").apply()
+            changed
         }
     }
 

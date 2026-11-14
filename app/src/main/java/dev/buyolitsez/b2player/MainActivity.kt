@@ -27,7 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -35,10 +37,13 @@ import androidx.media3.session.SessionToken
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -55,6 +60,10 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) ui.open(Screen.Settings)
         ui.refreshCatalog()
+        // Likes made in cmus show up on return to the app and every minute while it is on screen.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }; delay(60_000) } }
+        }
         // Download progress and finished downloads refresh the "downloaded" marks in lists.
         lifecycleScope.launch {
             WorkManager.getInstance(this@MainActivity).getWorkInfosByTagFlow(DownloadWorker.TAG)
