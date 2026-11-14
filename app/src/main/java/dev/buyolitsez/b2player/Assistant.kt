@@ -234,7 +234,7 @@ fun AssistantScreen(ui: Ui) {
     ui.version  // the key is saved in Settings
     if (a.apiKey.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Enter a Claude API key in Settings to use the assistant", color = Muted, textAlign = TextAlign.Center)
+            Text("Enter a Claude API key in Accounts to use the assistant", color = Muted, textAlign = TextAlign.Center)
             Spacer(Modifier.height(12.dp))
             Pill("Open accounts", active = true) { ui.open(Screen.Settings); ui.open(Screen.Accounts) }
         }
@@ -247,8 +247,9 @@ fun AssistantScreen(ui: Ui) {
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { input = if (input.isBlank()) it else "${input.trimEnd()} $it" }
     }
-    Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The input sits above the mini player and tabs, which are drawn over the bottom of the screen.
+    Column(Modifier.fillMaxSize().padding(bottom = LocalListBottom.current)) {
+        LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(20.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (a.entries.isEmpty()) item {
                 Text("Ask for music: “включи что-нибудь грустное из лайкнутых”, “поставь альбом Янки”, “что я слушал в октябре?”",
                     color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -257,8 +258,13 @@ fun AssistantScreen(ui: Ui) {
             item { if (a.busy) Text("…", color = Muted) }
             items(a.queued) { Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) { Text(it, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray1).padding(10.dp, 6.dp), color = Muted) } }
         }
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Message") }, maxLines = 4,
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Message", color = Faint) }, maxLines = 4,
+                shape = RoundedCornerShape(24.dp), textStyle = MaterialTheme.typography.bodyLarge,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Gray2, unfocusedContainerColor = Gray2,
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { a.send(input); input = "" }))
             IconButton({
@@ -279,7 +285,7 @@ fun AssistantScreen(ui: Ui) {
 private fun ChatBubble(e: ChatEntry) {
     when (e) {
         is ChatEntry.User -> Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) {
-            SelectionContainer { Text(e.text, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray2).padding(10.dp, 6.dp)) }
+            SelectionContainer { Text(e.text, Modifier.clip(RoundedCornerShape(18.dp)).background(Gray2).padding(14.dp, 9.dp)) }
         }
         is ChatEntry.Reply -> SelectionContainer {
             if (e.error) Text(e.text, color = MaterialTheme.colorScheme.error)
