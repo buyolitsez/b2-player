@@ -90,7 +90,7 @@ class PlaybackService : MediaSessionService() {
                 }
                 AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
-                updateLikeButton()
+                updateButtons()
                 switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
@@ -118,13 +118,18 @@ class PlaybackService : MediaSessionService() {
                 }
             }
             override fun onEvents(p: Player, events: Player.Events) {
+                if (events.contains(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) updateButtons()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
                     saveQueue(player)
                 }
                 if (events.contains(Player.EVENT_TIMELINE_CHANGED) && p.isPlaying) prefetch(player)
             }
         })
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        // A tap on the notification opens Now playing.
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra(MainActivity.OPEN_NOW_PLAYING, true)
+            // Without these the running app is only brought to the front and never sees the extra.
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         // A new queue or shuffle turned on: the current track goes first in the shuffle order.
         val sessionPlayer = object : ForwardingPlayer(player) {
             override fun setMediaItems(items: MutableList<MediaItem>) { super.setMediaItems(items); shuffleFromCurrent(player) }
@@ -162,12 +167,13 @@ class PlaybackService : MediaSessionService() {
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
-                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).build())
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).build())
                         .build()
                 override fun onCustomCommand(
                     s: MediaSession, c: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle,
                 ): ListenableFuture<SessionResult> {
                     if (command == LIKE) track(player.currentMediaItem)?.let { app.setLiked(listOf(it), !app.library.isLiked(it)) }
+                    if (command == SHUFFLE) player.shuffleModeEnabled = !player.shuffleModeEnabled
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 override fun onMediaButtonEvent(s: MediaSession, c: MediaSession.ControllerInfo, intent: Intent): Boolean {
@@ -191,20 +197,28 @@ class PlaybackService : MediaSessionService() {
         if (app.prefs.restoreQueue.value) restoreQueue(player)
         listenJob = trackListening(player)
         // Likes made in the app, and the catalog arriving after the session, redraw the heart too.
-        likeJob = app.scope.launch(Dispatchers.Main) { combine(app.likesChanged, app.catalog) { _, _ -> }.collect { updateLikeButton() } }
+        likeJob = app.scope.launch(Dispatchers.Main) { combine(app.likesChanged, app.catalog) { _, _ -> }.collect { updateButtons() } }
     }
 
     private var likeJob: Job? = null
 
-    /** The heart next to the playback buttons in the media notification, filled for a liked track. */
-    private fun updateLikeButton() {
+    /**
+     * Shuffle and the heart around the playback buttons in the media controls: the system puts one
+     * extra button on each side, so pause stays in the middle. Both are drawn smaller than the playback buttons.
+     */
+    private fun updateButtons() {
         val s = session ?: return
         val t = track(s.player.currentMediaItem)
         s.setMediaButtonPreferences(if (t == null) ImmutableList.of() else {
             val liked = app.library.isLiked(t)
+            val shuffle = s.player.shuffleModeEnabled
             ImmutableList.of(
+                CommandButton.Builder(if (shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
+                    .setCustomIconResId(if (shuffle) R.drawable.ic_shuffle_small_on else R.drawable.ic_shuffle_small_off)
+                    .setDisplayName(if (shuffle) "Shuffle off" else "Shuffle").setSessionCommand(SHUFFLE).build(),
                 CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
-                    .setDisplayName(if (liked) "Unlike" else "Like").setSessionCommand(LIKE).build()
+                    .setCustomIconResId(if (liked) R.drawable.ic_heart_small else R.drawable.ic_heart_small_outline)
+                    .setDisplayName(if (liked) "Unlike" else "Like").setSessionCommand(LIKE).build(),
             )
         })
     }
@@ -359,6 +373,7 @@ class PlaybackService : MediaSessionService() {
     private companion object {
         const val HEAD = 8L shl 20
         val LIKE = SessionCommand("dev.buyolitsez.b2player.LIKE", Bundle.EMPTY)
+        val SHUFFLE = SessionCommand("dev.buyolitsez.b2player.SHUFFLE", Bundle.EMPTY)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session

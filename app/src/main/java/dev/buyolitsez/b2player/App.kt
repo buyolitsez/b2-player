@@ -58,11 +58,12 @@ class Prefs(context: Context) {
     /** "Recently added" shows albums added in this many days; 0 shows all. */
     val recentDays = Num("recentDays", 0)
     val gridColumns = Num("gridColumns", 3)
-    val startTab = Str("startTab", "Albums")
+    /** A [Tab] name; older names of library sections or player tabs open the library. */
+    val startTab = Str("startTab", "Library")
+    /** The [LibrarySection] shown in the Library tab, kept from the last visit. */
+    val librarySection = Str("librarySection", "Albums")
     val swipeActions = Bool("swipeActions", true)
     val coverTint = Bool("coverTint", true)
-    /** "System", "Light" or "Dark". */
-    val theme = Str("theme", "System")
     // History
     val recordHistory = Bool("recordHistory", true)
     // Lyrics, controls, diagnostics

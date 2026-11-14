@@ -27,10 +27,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class Tab(val title: String) {
-    Queue("Queue"), Now("Now playing"), Folders("Folders"), Albums("Albums"), Artists("Artists"), Genres("Genres"),
-    Playlists("Playlists"), Search("Search")
-}
+enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), Search("Search") }
+
+/** What the Library tab lists. */
+enum class LibrarySection { Albums, Artists, Genres, Folders }
 
 sealed interface Screen {
     data object Root : Screen
@@ -44,6 +44,7 @@ sealed interface Screen {
     data object Downloads : Screen
     data object EqualizerView : Screen
     data object Settings : Screen
+    data object Accounts : Screen
     data object Assistant : Screen
 }
 
@@ -56,18 +57,31 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     val library get() = app.library
     val prefs get() = app.prefs
 
-    private fun startTab() = runCatching { Tab.valueOf(app.prefs.startTab.value) }.getOrDefault(Tab.Albums)
+    private fun startTab() = Tab.entries.firstOrNull { it.name == app.prefs.startTab.value } ?: Tab.Library
     var tab by mutableStateOf(startTab())
+    var section by mutableStateOf(LibrarySection.entries.firstOrNull { it.name == prefs.librarySection.value } ?: LibrarySection.Albums)
+        private set
+    fun showSection(s: LibrarySection) { section = s; prefs.librarySection.set(s.name) }
+    /** Now playing, and the queue on top of it, cover the tabs. */
+    var nowOpen by mutableStateOf(false)
+    var queueOpen by mutableStateOf(false)
+    /** The search field above a list is shown; it closes when the screen changes. */
+    var filterOpen by mutableStateOf(false)
     val stacks = mutableStateMapOf<Tab, List<Screen>>()
     var status by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
     /** Bumped when likes, playlists or downloads change, so lists re-read them. */
     var version by mutableIntStateOf(0)
-    var colors by mutableStateOf(defaultColors(true))
+    var colors by mutableStateOf(DefaultColors)
     /** Tracks waiting for the "Add to playlist" dialog. */
     var addToPlaylist by mutableStateOf<List<Track>?>(null)
     /** Track shown in the "Track info" dialog. */
     var trackInfo by mutableStateOf<Track?>(null)
+    /** The track whose actions sheet is open; [extra] adds rows of the screen it was opened from. */
+    class TrackMenuRequest(val track: Track, val queueIndex: Int?, val extra: (@androidx.compose.runtime.Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit)?)
+    var trackMenu by mutableStateOf<TrackMenuRequest?>(null)
+    /** The "New playlist" dialog is open. */
+    var newPlaylist by mutableStateOf(false)
 
     init {
         // Likes from here and from the media notification re-read the lists.
@@ -103,11 +117,16 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     // ---------- navigation ----------
 
     fun stack(t: Tab = tab) = stacks[t] ?: listOf(Screen.Root)
-    fun open(s: Screen, inTab: Tab? = null) {
+    /** Opening a screen closes Now playing; [section] also switches the Library tab to it. */
+    fun open(s: Screen, inTab: Tab? = null, section: LibrarySection? = null) {
+        nowOpen = false; queueOpen = false
         if (inTab != null) tab = inTab
+        if (section != null) showSection(section)
         stacks[tab] = stack() + s
     }
     fun back(): Boolean {
+        if (queueOpen) { queueOpen = false; return true }
+        if (nowOpen) { nowOpen = false; return true }
         val st = stack()
         if (st.size > 1) { stacks[tab] = st.dropLast(1); return true }
         if (tab == Tab.Search && query.isNotEmpty()) { query = ""; return true }
