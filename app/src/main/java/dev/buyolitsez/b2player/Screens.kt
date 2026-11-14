@@ -52,29 +52,52 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @UnstableApi
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
-    val recent = ui.prefs.albumSortRecent
+    val sort = AlbumSort.entries.firstOrNull { it.name == ui.prefs.albumSort.value } ?: AlbumSort.Artist
+    val recent = sort == AlbumSort.Recent
     val days = ui.prefs.recentDays
+    val minRating = ui.prefs.minRating
+    var sortMenu by remember { mutableStateOf(false) }
     var periodMenu by remember { mutableStateOf(false) }
+    var ratingMenu by remember { mutableStateOf(false) }
     var customDays by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
-    val albums = remember(cat, recent.value, days.value, fq) {
-        val since = if (recent.value && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
+    val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) {
+        val since = if (recent && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
         val list = cat.albums.filter { a -> fq in a.searchKey && a.added >= since }
-        if (recent.value) list.sortedByDescending { it.added } else list
+        when (sort) {
+            AlbumSort.Artist -> list
+            AlbumSort.Recent -> list.sortedByDescending { it.added }
+            AlbumSort.Rating -> list.map { it to ui.rating(it) }
+                .filter { (_, r) -> when (minRating.value) { 0 -> true; -1 -> r == null; else -> r != null && r >= minRating.value } }
+                .sortedByDescending { it.second ?: 0.0 }.map { it.first }
+        }
     }
     fun label(d: Int) = when (d) { 0 -> "All time"; 1 -> "1 day"; else -> "$d days" }
+    fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
     Column {
         FilterField(ui, q) { q = it }
         AlbumGrid(ui, albums, header = {
             // Sort order, the period of "Recently added", grid or list.
             Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { recent.set(!recent.value) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp))
-                    Text(if (recent.value) "Recently added" else "By artist", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge)
+                Box {
+                    Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { sortMenu = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp))
+                        Text(sort.title, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge)
+                    }
+                    DropdownMenu(sortMenu, { sortMenu = false }, containerColor = Gray2) {
+                        AlbumSort.entries.forEach { s -> DropdownMenuItem({ Text(s.title) }, { sortMenu = false; ui.prefs.albumSort.set(s.name) }) }
+                    }
                 }
                 Spacer(Modifier.weight(1f))
-                if (recent.value) Box {
+                if (sort == AlbumSort.Rating) Box {
+                    Text(ratingLabel(minRating.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { ratingMenu = true }.padding(8.dp),
+                        style = MaterialTheme.typography.bodySmall, color = Muted)
+                    DropdownMenu(ratingMenu, { ratingMenu = false }, containerColor = Gray2) {
+                        listOf(0, 10, 9, 8, 7, 6, 5, -1).forEach { r -> DropdownMenuItem({ Text(ratingLabel(r)) }, { ratingMenu = false; minRating.set(r) }) }
+                    }
+                }
+                if (recent) Box {
                     Text(label(days.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { periodMenu = true }.padding(8.dp),
                         style = MaterialTheme.typography.bodySmall, color = Muted)
                     DropdownMenu(periodMenu, { periodMenu = false }, containerColor = Gray2) {
@@ -277,6 +300,7 @@ fun AlbumScreen(ui: Ui, a: Album) {
                         listOfNotNull(a.year?.toString(), "${a.tracks.size} tracks", formatTime(a.duration)).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = Muted,
                     )
+                    RatingPicker(ui.rating(a)) { ui.setRating(a, it) }
                 }
                 Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, a.tracks) }
             }
@@ -340,7 +364,7 @@ fun PlaylistsTab(ui: Ui, cat: Catalog) {
                         }
                         tile("History", Icons.Default.History) { ui.open(Screen.HistoryView) }
                         tile("Recently added", Icons.Default.NewReleases) {
-                            ui.prefs.albumSortRecent.set(true); ui.showSection(LibrarySection.Albums); ui.stacks[Tab.Library] = listOf(Screen.Root); ui.tab = Tab.Library
+                            ui.prefs.albumSort.set(AlbumSort.Recent.name); ui.showSection(LibrarySection.Albums); ui.stacks[Tab.Library] = listOf(Screen.Root); ui.tab = Tab.Library
                         }
                     }
                 }

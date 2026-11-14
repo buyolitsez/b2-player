@@ -24,6 +24,7 @@ prepared in advance by a script on the computer that holds the library.
   lyrics/<album-id>.json   lyrics from tags
   state/likes.json         likes (differences from the catalog's flags)
   state/playlists.json     playlists
+  state/ratings.json       album ratings 1-10 (from the listening diary, and set in the app or cmus)
   state/history.tsv        listening history: time and track id
   state/tags.json          tag edits made on the phone, not yet written to files
   logs/<date>.log          phone log after errors
@@ -51,6 +52,8 @@ tools/sync-music.sh -- "rock/Artist"   # only these subfolders
 tools/publish-catalog.sh               # catalog + covers, then check that every path exists in the bucket
 tools/apply-tags.py                    # tag edits from the phone: what would change in the files
 tools/apply-tags.py --apply            # write them to the files and drop them from state/tags.json
+tools/sync-ratings.py                  # album ratings: what would change in the diary and state/ratings.json
+tools/sync-ratings.py --apply          # write them (b2-ratings.timer runs this every 10 minutes)
 ```
 
 `sync-music.sh` does not start while a restic backup is running on the machine, so the two don't
@@ -66,6 +69,15 @@ Tag editing: "Track info" in a track's menu → Edit. The phone puts edits into 
 file's own tags. `apply-tags.py --apply` writes them to the files with mutagen and prints the command
 `sync-music.sh -- <folders> && publish-catalog.sh`. When a file's size changes in the catalog, the
 phone drops its old copy from the stream cache.
+
+Album ratings: the listening diary (`послушал <year>.md`, lines like `207. Youth of America (1981) - Wipers,
+12.11.2026, 7/10`) is the source. `sync-ratings.py` matches its lines to catalog albums by artist and title
+(also without `(edition)`/`[label]` parts and with small typos), the last rating of an album wins, and
+uploads `state/ratings.json` (`{"albums": {"<album-id>": {"rating": 7}}}`). A rating set on the phone or
+in cmus goes there as `{"rating": 8, "time": <ms>, "pending": true}`; the script appends it to the diary
+as a new line in the same format and then reads it back like the others. Unmatched diary lines are in
+`~/.cache/b2-player/ratings-unmatched.txt`; `~/.config/b2-player/rating-aliases.tsv`
+(`artist<TAB>title<TAB>album-id`, as written in the diary) names their albums by hand.
 
 `make_catalog.py`:
 - groups tracks into albums by folder (`CD1`/`Disc 2` merge into the parent), and within a folder by the album tag;

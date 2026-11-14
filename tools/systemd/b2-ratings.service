@@ -1,0 +1,6 @@
+[Unit]
+Description=Sync album ratings between the listening diary and the music bucket
+
+[Service]
+Type=oneshot
+ExecStart=%h/projects/b2-player/tools/sync-ratings.py --apply

@@ -78,9 +78,11 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) { ui.open(Screen.Settings); ui.open(Screen.Accounts) }
         ui.refreshCatalog()
-        // Likes made in cmus show up on return to the app and every minute while it is on screen.
+        // Likes and ratings made in cmus show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }; delay(60_000) } }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() }; runCatching { app.syncRatings() } }; delay(60_000) }
+            }
         }
         if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
         // Download progress and finished downloads refresh the "downloaded" marks in lists.

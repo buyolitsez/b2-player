@@ -102,3 +102,49 @@ class History(context: Context) {
 
     companion object { const val KEY = "state/history.tsv" }
 }
+
+/**
+ * Album ratings 1 to 10, synced with state/ratings.json in the bucket. tools/sync-ratings.py on arch
+ * fills it from the listening diary and writes ratings set here (marked "pending") into the diary.
+ */
+class Ratings(context: Context) {
+    private val prefs = context.getSharedPreferences("ratings", Context.MODE_PRIVATE)
+    /** The bucket copy and the ratings set here but not uploaded yet, album id -> entry. */
+    private var remote = parse(prefs.getString("remote", null))
+    private var local = parse(prefs.getString("local", null))
+
+    @Synchronized fun get(albumId: String): Double? = (local[albumId] ?: remote[albumId])?.optDouble("rating")
+
+    @Synchronized fun set(albumId: String, rating: Int) {
+        local = local + (albumId to JSONObject().put("rating", rating).put("time", System.currentTimeMillis()).put("pending", true))
+        prefs.edit().putString("local", toJson(local).toString()).apply()
+    }
+
+    /** Puts the local ratings on top of the bucket copy. Returns whether the shown ratings changed. */
+    fun sync(b2: B2): Boolean {
+        val sent = synchronized(this) { local }
+        val before = synchronized(this) { remote + local }
+        var fetched = b2.fetchOrNull(KEY)?.let { parse(it.decodeToString()) } ?: emptyMap()
+        if (sent.isNotEmpty()) {
+            fetched = fetched + sent
+            b2.upload(KEY, toJson(fetched).toString(1).toByteArray(), "application/json")
+        }
+        return synchronized(this) {
+            remote = fetched
+            // A rating set during the sync stays local; the next sync sends it.
+            local = local.filter { (id, e) -> sent[id] !== e }
+            prefs.edit().putString("remote", toJson(remote).toString()).putString("local", toJson(local).toString()).apply()
+            (remote + local).mapValues { it.value.toString() } != before.mapValues { it.value.toString() }
+        }
+    }
+
+    private fun toJson(m: Map<String, JSONObject>) =
+        JSONObject().put("version", 1).put("albums", JSONObject().also { o -> m.forEach { (k, v) -> o.put(k, v) } })
+
+    private fun parse(s: String?): Map<String, JSONObject> {
+        val o = s?.let { JSONObject(it).optJSONObject("albums") } ?: return emptyMap()
+        return o.keys().asSequence().associateWith { o.getJSONObject(it) }
+    }
+
+    companion object { const val KEY = "state/ratings.json" }
+}

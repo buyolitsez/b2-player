@@ -332,7 +332,13 @@ fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = n
             if (header != null) item(span = { GridItemSpan(cols) }) { header() }
             items(albums, key = { it.id }) { a ->
                 Column(Modifier.clickable { ui.open(Screen.AlbumView(a)) }) {
-                    Cover(ui, a.cover, null, Modifier.fillMaxWidth())
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Cover(ui, a.cover, null, Modifier.fillMaxWidth())
+                        ui.rating(a)?.let { r ->
+                            Text(formatRating(r), Modifier.padding(4.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.7f)).padding(horizontal = 5.dp),
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                     Text(a.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                     Text(if (showArtist) a.artist else a.year?.toString() ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
@@ -354,12 +360,30 @@ fun AlbumRow(ui: Ui, a: Album, subtitle: String? = null) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(ui, a.cover, 48.dp)
-        Column(Modifier.padding(start = 14.dp)) {
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(a.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
             Text(
                 subtitle ?: listOfNotNull(a.artist, a.year?.toString()).joinToString(" · "),
                 maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted,
             )
+        }
+        ui.rating(a)?.let { Text(formatRating(it), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleSmall, color = Muted) }
+    }
+}
+
+fun formatRating(r: Double) = if (r % 1 == 0.0) r.toInt().toString() else r.toString()
+
+/** Ratings 1 to 10 in a row; the chosen one is highlighted. */
+@Composable
+fun RatingPicker(rating: Double?, onRate: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        (1..10).forEach { n ->
+            val on = rating != null && rating >= n - 0.5 && rating < n + 0.5
+            Box(
+                Modifier.weight(1f).height(32.dp).clip(RoundedCornerShape(6.dp))
+                    .background(if (on) MaterialTheme.colorScheme.primary else Gray2).clickable { onRate(n) },
+                Alignment.Center,
+            ) { Text("$n", style = MaterialTheme.typography.labelLarge, color = if (on) Color.Black else Muted) }
         }
     }
 }
