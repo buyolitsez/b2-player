@@ -58,9 +58,9 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     var customDays by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
-    val albums = remember(cat, recent.value, days.value, ui.offlineOnly, ui.offlineIds, fq) {
+    val albums = remember(cat, recent.value, days.value, fq) {
         val since = if (recent.value && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
-        val list = cat.albums.filter { a -> fq in a.searchKey && a.added >= since && (!ui.offlineOnly || a.tracks.any { ui.visible(it) }) }
+        val list = cat.albums.filter { a -> fq in a.searchKey && a.added >= since }
         if (recent.value) list.sortedByDescending { it.added } else list
     }
     fun label(d: Int) = when (d) { 0 -> "All time"; 1 -> "1 day"; else -> "$d days" }
@@ -170,7 +170,7 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
     val subs = remember(f, fq) { f.folders.values.filter { fq in searchFold(it.name) } }
-    val tracks = remember(f, fq, ui.offlineOnly, ui.offlineIds) { f.tracks.filter { fq in it.searchKey && ui.visible(it) } }
+    val tracks = remember(f, fq) { f.tracks.filter { fq in it.searchKey } }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
@@ -192,9 +192,9 @@ fun SearchTab(ui: Ui, cat: Catalog) {
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     // Filtering 18k tracks runs off the main thread; the previous results stay until the new ones are ready.
-    val found by produceState(Triple(emptyList<Pair<String, List<Album>>>(), emptyList<Album>(), emptyList<Track>()), cat, fq, ui.offlineOnly, ui.offlineIds) {
+    val found by produceState(Triple(emptyList<Pair<String, List<Album>>>(), emptyList<Album>(), emptyList<Track>()), cat, fq) {
         value = if (fq.length < 2) Triple(emptyList(), emptyList(), emptyList()) else withContext(Dispatchers.Default) {
-            Triple(cat.artists.filter { fq in searchFold(it.first) }, cat.albums.filter { fq in it.searchKey }, cat.tracks.filter { fq in it.searchKey && ui.visible(it) })
+            Triple(cat.artists.filter { fq in searchFold(it.first) }, cat.albums.filter { fq in it.searchKey }, cat.tracks.filter { fq in it.searchKey })
         }
     }
     val (artists, albums, allTracks) = found
@@ -250,9 +250,9 @@ fun PlayButtons(
         }
         if (count) Text(if (tracks.size == 1) "1 track" else "${tracks.size} tracks", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
         Spacer(Modifier.weight(1f))
-        SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 26.dp) { ui.play(tracks, 0, shuffled = true) }
+        SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 26.dp) { ui.play(tracks, shuffled = true) }
         Box(
-            Modifier.padding(start = 4.dp).size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(tracks, 0) },
+            Modifier.padding(start = 4.dp).size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(tracks) },
             Alignment.Center,
         ) { Icon(Icons.Default.PlayArrow, "Play", Modifier.size(30.dp), tint = Color.Black) }
     }
@@ -261,7 +261,6 @@ fun PlayButtons(
 @UnstableApi
 @Composable
 fun AlbumScreen(ui: Ui, a: Album) {
-    val tracks = a.tracks.filter { ui.visible(it) }
     LazyColumn(contentPadding = listPadding()) {
         item {
             Column {
@@ -275,14 +274,14 @@ fun AlbumScreen(ui: Ui, a: Album) {
                         modifier = Modifier.clickable { ui.open(Screen.ArtistView(a.artist), Tab.Library) }.padding(vertical = 4.dp),
                     )
                     Text(
-                        listOfNotNull(a.year?.toString(), if (tracks.size == a.tracks.size) "${a.tracks.size} tracks" else "${tracks.size} of ${a.tracks.size} tracks offline", formatTime(a.duration)).joinToString(" · "),
+                        listOfNotNull(a.year?.toString(), "${a.tracks.size} tracks", formatTime(a.duration)).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = Muted,
                     )
                 }
                 Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, a.tracks) }
             }
         }
-        itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(tracks, i) }) }
+        itemsIndexed(a.tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(a.tracks, i) }) }
     }
 }
 
@@ -459,8 +458,8 @@ fun LikedScreen(ui: Ui, cat: Catalog) {
     var byRecent by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
-    val liked = remember(cat, ui.version, byRecent, ui.offlineOnly, ui.offlineIds, fq) {
-        val l = cat.tracks.filter { fq in it.searchKey && ui.library.isLiked(it) && ui.visible(it) }
+    val liked = remember(cat, ui.version, byRecent, fq) {
+        val l = cat.tracks.filter { fq in it.searchKey && ui.library.isLiked(it) }
         if (byRecent) l.sortedByDescending { it.album.added } else l
     }
     Column {
@@ -582,6 +581,9 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
                 Text("Queue", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
                 if (ids.isNotEmpty()) Text("${at + 1} of ${ids.size} · ${formatTime(left)} left", Modifier.padding(bottom = 6.dp),
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
+            }
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QueueFilter.entries.forEach { f -> Pill(f.title, active = f == ui.queueFilter) { ui.setQueueFilter(f) } }
             }
             if (filter || q.isNotEmpty()) SearchBox(q, { q = it }, "Search")
             LazyColumn(Modifier.weight(1f), state = listState) {
