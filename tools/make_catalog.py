@@ -29,6 +29,13 @@ import mutagen
 from PIL import Image
 
 AUDIO_EXT = {".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".ape", ".wv", ".aac"}
+# copies Syncthing leaves when a file changed on two devices
+SYNC_CONFLICT = re.compile(r"\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]+")
+
+
+def conflict_copy(name, names):
+    """True for a Syncthing conflict copy whose original is in names too."""
+    return SYNC_CONFLICT.search(name) is not None and SYNC_CONFLICT.sub("", name) in names
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 DISC_DIR = re.compile(r"^\s*(cd|disc|disk|диск)\s*\d+\s*$", re.I)
 COVER_NAMES = ("cover", "folder", "front", "обложка")
@@ -287,7 +294,8 @@ def keep_bucket_only(out_albums, root, previous, bucket_files, lyrics_dir, old_l
     kept = 0
     for pal in prev["albums"]:
         tracks = [t for t in pal["tracks"]
-                  if t["path"] in in_bucket and not os.path.exists(os.path.join(root, t["path"]))]
+                  if t["path"] in in_bucket and not os.path.exists(os.path.join(root, t["path"]))
+                  and not conflict_copy(t["path"], in_bucket)]
         if not tracks:
             continue
         kept += len(tracks)
@@ -335,7 +343,7 @@ def main():
     bad_names = []
 
     for d, dirs, files in walk(root, a.only):
-        audio = [f for f in files if os.path.splitext(f)[1].lower() in AUDIO_EXT]
+        audio = [f for f in files if os.path.splitext(f)[1].lower() in AUDIO_EXT and not conflict_copy(f, files)]
         if not audio:
             continue
         rel_dir = os.path.relpath(d, root)
