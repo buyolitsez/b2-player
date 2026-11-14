@@ -122,6 +122,7 @@ class App : Application() {
             DownloadWorker.enqueue(this, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
                 one?.title ?: "${changed.size} liked tracks", changed, wifiOnly = prefs.autoWifiOnly.value)
         }
+        if (!liked) changed.forEach { DownloadWorker.cancel(this, "like:${it.id}", listOf(it)) }
         if (!liked && prefs.deleteOnUnlike.value) {
             // CUE tracks share a file: keep it while another of its tracks is still liked.
             changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }

@@ -63,6 +63,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             _progress.value = emptyMap()
         }
 
+        /** Drops a download that hasn't finished, e.g. the one a like started when the track is unliked. */
+        fun cancel(context: Context, name: String, tracks: List<Track>) {
+            WorkManager.getInstance(context).cancelUniqueWork("dl:$name")
+            _progress.update { it - tracks.map { t -> t.path }.toSet() }
+        }
+
         /** [wifiOnly] is for automatic downloads (liked tracks); manual ones use any network. */
         fun enqueue(context: Context, name: String, title: String, tracks: List<Track>, wifiOnly: Boolean = false) {
             val req = OneTimeWorkRequestBuilder<DownloadWorker>()
