@@ -36,6 +36,9 @@ interface AssistantHost {
     fun createPlaylist(name: String, tracks: List<Track>)
     fun addToPlaylist(p: Playlist, tracks: List<Track>)
     fun history(): List<Play>
+    /** The user's album rating, 1 to 10 (halves from the diary), or null. */
+    fun rating(a: Album): Double?
+    fun setRating(a: Album, rating: Int)
 
     /** A reply of Claude, or an error to show in the chat. */
     fun reply(text: String, error: Boolean = false)
@@ -156,8 +159,13 @@ class AssistantChat(private val host: AssistantHost) {
             - To pick music by mood ("что-нибудь грустное"), search the whole library, not only liked tracks, choose by what you
               know about the songs and artists, and play your choice. Say in one line what you put on. Use liked_only only
               when the user asks for liked music.
-            - Likes and playlists are the user's data: set_liked, create_playlist and add_to_playlist show the user the change,
-              and the tool result says whether they applied or cancelled it. Don't ask for confirmation in text as well.
+            - Likes, ratings and playlists are the user's data: set_liked, set_rating, create_playlist and add_to_playlist
+              show the user the change, and the tool result says whether they applied or cancelled it. Don't ask for
+              confirmation in text as well.
+            - Album ratings (1 to 10) are the user's scores from their listening diary, which goes back years before the
+              listening history: a rated album has been heard even with no plays in the history. Weigh ratings when
+              recommending, and don't offer a rated album as new to the user. When the user gives an album a score
+              ("spirit of eden 6/10"), find the album and call set_rating.
             - Each user message starts with the date and what is playing, in brackets.
             - Use web search for questions about music, artists and albums that you can't answer confidently.
         """.trimIndent()

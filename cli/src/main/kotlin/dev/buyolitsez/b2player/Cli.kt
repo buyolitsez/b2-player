@@ -2,6 +2,7 @@ package dev.buyolitsez.b2player
 
 import com.anthropic.core.jsonMapper
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.text.SimpleDateFormat
@@ -68,8 +69,9 @@ class Cmus(private val cat: Catalog) : AssistantHost {
     private val state = HashMap<String, String?>()
 
     private var likes: Pair<Set<String>, Set<String>>? = null
+    private var ratings: JsonNode? = null
 
-    fun refresh() { state.clear(); likes = null }
+    fun refresh() { state.clear(); likes = null; ratings = null }
     private fun state(name: String) = state.getOrPut(name) { bucketFile(name) }
 
     private fun key(t: Track): Any = if (t.start == null) t.path else t.path.substringBeforeLast('/') to t.number
@@ -96,8 +98,8 @@ class Cmus(private val cat: Catalog) : AssistantHost {
 
     override val intro = """
         You are the assistant of cmus, the terminal music player on the user's Arch Linux computer. It plays the same library
-        as B2 Player on the user's phone, with the same likes, playlists and listening history. Replies are shown as plain text
-        in a terminal: no Markdown except simple lists.
+        as B2 Player on the user's phone, with the same likes, ratings, playlists and listening history. Replies are shown as
+        plain text in a terminal: no Markdown except simple lists.
     """.trimIndent()
 
     override val currentId get() = query()["file"]?.let { trackOf(it) }?.id
@@ -173,6 +175,24 @@ class Cmus(private val cat: Catalog) : AssistantHost {
     override fun history(): List<Play> = state("state/history.tsv").orEmpty().lineSequence().mapNotNull { l ->
         val tab = l.indexOf('\t'); if (tab <= 0) null else l.substring(0, tab).toLongOrNull()?.let { Play(l.substring(tab + 1), it) }
     }.toList()
+
+    /** Album id -> {"rating": …}. */
+    private fun ratings() = ratings ?: (state("state/ratings.json")?.let { mapper.readTree(it) }?.path("albums") ?: mapper.createObjectNode())
+        .also { ratings = it }
+
+    override fun rating(a: Album): Double? = ratings().get(a.id)?.get("rating")?.asDouble()
+
+    /** On top of the bucket copy as "pending", as cmus-b2-rate does; tools/sync-ratings.py writes it to the diary. */
+    override fun setRating(a: Album, rating: Int) {
+        state.remove("state/ratings.json"); ratings = null
+        val albums = ratings().deepCopy<JsonNode>() as ObjectNode
+        albums.putObject(a.id).put("rating", rating).put("time", System.currentTimeMillis()).put("pending", true)
+        val json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(mapOf("version" to 1, "albums" to albums))
+        upload("state/ratings.json", json)
+        state["state/ratings.json"] = json; ratings = null
+        // cmus shows the ratings from the file cmus-b2 writes
+        runCatching { exec("cmus-b2", "--likes") }
+    }
 
     override fun reply(text: String, error: Boolean) = println(if (error) "\u001b[31m$text\u001b[0m" else "$text\n")
 

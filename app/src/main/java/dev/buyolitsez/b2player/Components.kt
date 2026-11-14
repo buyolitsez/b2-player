@@ -392,7 +392,6 @@ fun AlbumRow(ui: Ui, a: Album, subtitle: String? = null) {
     }
 }
 
-fun formatRating(r: Double) = if (r % 1 == 0.0) r.toInt().toString() else r.toString()
 
 /** Ratings 1 to 10 in a row; the chosen one is highlighted. */
 @Composable
