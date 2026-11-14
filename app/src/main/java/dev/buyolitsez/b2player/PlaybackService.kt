@@ -94,10 +94,10 @@ class PlaybackService : MediaSessionService() {
                 switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
-                if (player.playWhenReady && item != null) app.handoffs.write(app.b2, item.mediaId, 0, true)
+                if (player.playWhenReady && item != null) app.handoffs.write(app.b2, upcoming(player), 0, true)
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                player.currentMediaItem?.let { app.handoffs.write(app.b2, it.mediaId, player.currentPosition, playWhenReady) }
+                if (player.currentMediaItem != null) app.handoffs.write(app.b2, upcoming(player), player.currentPosition, playWhenReady)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
@@ -336,6 +336,18 @@ class PlaybackService : MediaSessionService() {
             val q = SavedQueue("", ids, player.currentMediaItemIndex, player.currentPosition)
             withContext(Dispatchers.IO) { app.library.currentQueue = if (ids.isEmpty()) null else q }
         }
+    }
+
+    /** The current track and the ones after it in play order, for the other device to continue. */
+    private fun upcoming(player: Player): List<String> {
+        val tl = player.currentTimeline
+        val ids = ArrayList<String>()
+        var i = player.currentMediaItemIndex
+        while (i != C.INDEX_UNSET && ids.size < Handoffs.QUEUE_MAX) {
+            ids.add(player.getMediaItemAt(i).mediaId)
+            i = tl.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        }
+        return ids
     }
 
     /** Downloads the next tracks of the queue into the cache, so a weak network does not stall playback. */
