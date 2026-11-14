@@ -1,7 +1,8 @@
-// Bump when shipping notable features. The third number is the commit count, see versionCode.
+// Bump when shipping notable features. The third number is the commit count of HEAD (checkout needs full history).
 val baseVersion = "0.5"
-// Commit count of HEAD: grows with every merge to main, same locally and in CI (checkout needs full history).
 val commitCount = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
+// versionCode is the commit time of HEAD in minutes: unlike the commit count, it doesn't drop when a branch is squash-merged.
+val commitMinutes = providers.exec { commandLine("git", "log", "-1", "--format=%ct") }.standardOutput.asText.get().trim().toLong().div(60).toInt()
 
 plugins {
     id("com.android.application")
@@ -16,7 +17,7 @@ android {
         applicationId = "dev.buyolitsez.b2player"
         minSdk = 29
         targetSdk = 36
-        versionCode = commitCount
+        versionCode = commitMinutes
         versionName = "$baseVersion.$commitCount"
         ndk { abiFilters += "arm64-v8a" }
     }

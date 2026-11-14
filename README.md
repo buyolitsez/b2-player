@@ -127,8 +127,8 @@ Install the release build: the debug build is several times slower (catalog pars
 ≈0.16 s, startup ≈470 ms instead of ≈200 ms). Both are signed with the debug key, so switching between
 them keeps the app's data.
 
-The version is `baseVersion.N` (e.g. 0.5.35), where N is the number of commits in `HEAD` and also the versionCode.
+The version is `baseVersion.N` (e.g. 0.5.35), where N is the number of commits in `HEAD`. The versionCode is the
+commit time of `HEAD` in minutes, so it keeps growing after a squash merge.
 Every push to main publishes a `vX.Y.N` release on GitHub Releases. CI signs it with the debug key from the
 `DEBUG_KEYSTORE` secret (the keystore in base64), so releases install over local builds. Bump `baseVersion` in
-`app/build.gradle.kts` when shipping notable features. A local build from a branch with more commits than main gets a higher versionCode,
-so the next release won't install over it until main catches up.
+`app/build.gradle.kts` when shipping notable features.
