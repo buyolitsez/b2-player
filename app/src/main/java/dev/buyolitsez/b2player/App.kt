@@ -79,8 +79,9 @@ class Prefs(context: Context) {
     // Storage
     val cacheGb = Num("cacheGb", 4)
 
-    val offlineOnly = MutableStateFlow(p.getBoolean("offlineOnly", false))
-    fun setOfflineOnly(v: Boolean) { offlineOnly.value = v; p.edit().putBoolean("offlineOnly", v).apply() }
+    /** Not saved: it follows the network, see [Ui.watchOffline]. */
+    val offlineOnly = MutableStateFlow(false)
+    fun setOfflineOnly(v: Boolean) { offlineOnly.value = v }
 }
 
 @UnstableApi

@@ -1,6 +1,8 @@
 package dev.buyolitsez.b2player
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.material3.SnackbarDuration
@@ -17,6 +19,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -136,6 +143,39 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         launch {
             kotlinx.coroutines.flow.combine(app.catalog, androidx.compose.runtime.snapshotFlow { version }) { c, _ -> c }
                 .collect { c -> if (c != null && offlineOnly) offlineIds = availableIds(c) }
+        }
+        launch { followNetwork() }
+    }
+
+    /** True while the phone has a default network; the debounce rides over Wi-Fi/mobile handovers. */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private fun online() = callbackFlow {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { trySend(true) }
+            override fun onLost(network: Network) { trySend(cm.activeNetwork != null) }
+        }
+        trySend(cm.activeNetwork != null)
+        cm.registerDefaultNetworkCallback(cb)
+        awaitClose { cm.unregisterNetworkCallback(cb) }
+    }.debounce(1500).distinctUntilChanged()
+
+    private var offlineNote: Job? = null
+
+    /**
+     * Offline only follows the network: on without it, off when it is back. Undo, or the toggle in
+     * the menu, holds until the next change.
+     */
+    private suspend fun followNetwork() = online().collect { on ->
+        offlineNote?.cancel()
+        if (on != prefs.offlineOnly.value) return@collect
+        AppLog.d("ui", if (on) "Network is back, offline only off" else "No network, offline only on")
+        prefs.setOfflineOnly(!on); version++
+        if (!on) offlineNote = scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            if (snackbar.showSnackbar("No network: offline only", "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                prefs.setOfflineOnly(false); version++
+            }
         }
     }
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
