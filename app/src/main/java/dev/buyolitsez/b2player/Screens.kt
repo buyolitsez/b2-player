@@ -560,6 +560,8 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     val current = tracks.getOrNull(ui.currentIndex)
     // Start at the current track, with what already played above it.
     LaunchedEffect(Unit) { if (played.isNotEmpty()) listState.scrollToItem(played.size + 1) }
+    // Saved queues are at the top of the list, above what played.
+    LaunchedEffect(showSaved) { if (showSaved) listState.animateScrollToItem(0) }
     val drag = !ui.shuffle && fq.isEmpty()
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val h = with(LocalDensity.current) { maxHeight.toPx() }
