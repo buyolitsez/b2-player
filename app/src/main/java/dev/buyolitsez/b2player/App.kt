@@ -47,6 +47,8 @@ class Prefs(context: Context) {
     val skipSilence = Bool("skipSilence", false)
     val restoreQueue = Bool("restoreQueue", true)
     val undoReplace = Bool("undoReplace", true)
+    /** A [QueueFilter] name. */
+    val queueFilter = Str("queueFilter", "All")
     // Downloads
     val autoDownloadLiked = Bool("autoDownloadLiked", true)
     val autoWifiOnly = Bool("autoWifiOnly", true)
@@ -80,10 +82,6 @@ class Prefs(context: Context) {
         set(v) = p.edit().putString("lastLogFile", v).apply()
     // Storage
     val cacheGb = Num("cacheGb", 4)
-
-    /** Not saved: it follows the network, see [Ui.watchOffline]. */
-    val offlineOnly = MutableStateFlow(false)
-    fun setOfflineOnly(v: Boolean) { offlineOnly.value = v }
 }
 
 @UnstableApi

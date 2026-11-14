@@ -105,7 +105,7 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
         when (a.optString("mode", "replace")) {
             "next" -> ui.playNext(tracks)
             "end" -> ui.addToEnd(tracks)
-            else -> ui.play(tracks, 0, shuffled = a.optBoolean("shuffle"))
+            else -> ui.play(tracks, shuffled = a.optBoolean("shuffle"))
         }
         return "OK, ${tracks.size} tracks"
     }
@@ -188,7 +188,7 @@ class AssistantTools(private val ui: Ui, val cat: Catalog) {
                     "artist": {"type": "string"}, "album": {"type": "string"},
                     "genre": {"type": "string", "description": "Top folder of the library"},
                     "playlist": {"type": "string", "description": "Only tracks of this playlist (exact name)"},
-                    "liked_only": {"type": "boolean"},
+                    "liked_only": {"type": "boolean", "description": "Only when the user asks for liked tracks"},
                     "limit": {"type": "integer", "description": "Default 100, max 400"}}}"""),
             Triple("search_albums", "Find albums. Filters are optional substrings.",
                 """{"type": "object", "properties": {

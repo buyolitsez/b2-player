@@ -1,8 +1,6 @@
 package dev.buyolitsez.b2player
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.material3.SnackbarDuration
@@ -19,11 +17,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,6 +24,9 @@ enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), 
 
 /** What the Library tab lists. */
 enum class LibrarySection { Albums, Artists, Genres, Folders }
+
+/** Which tracks of what was played the queue keeps. */
+enum class QueueFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
 
 sealed interface Screen {
     data object Root : Screen
@@ -139,64 +135,14 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     // ---------- library helpers ----------
 
-    /**
-     * Offline-only mode as Compose state, and the ids of tracks on the phone. The set is built off
-     * the main thread (a file check and a cache lookup per track), see [watchOffline].
-     */
-    var offlineOnly by mutableStateOf(prefs.offlineOnly.value); private set
-    var offlineIds by mutableStateOf<Set<String>>(emptySet()); private set
-    fun visible(t: Track) = !offlineOnly || t.id in offlineIds
-
-    private suspend fun availableIds(cat: Catalog) =
-        withContext(Dispatchers.IO) { cat.tracks.filter { library.availableOffline(it) }.mapTo(HashSet()) { it.id } }
-
-    /** Keeps [offlineOnly] and [offlineIds] current; the mode switches only once the set is ready. */
-    suspend fun watchOffline() = kotlinx.coroutines.coroutineScope {
-        launch {
-            prefs.offlineOnly.collect { on ->
-                val cat = app.catalog.value
-                if (on && cat != null) offlineIds = availableIds(cat)
-                offlineOnly = on
-            }
-        }
-        launch {
-            kotlinx.coroutines.flow.combine(app.catalog, androidx.compose.runtime.snapshotFlow { version }) { c, _ -> c }
-                .collect { c -> if (c != null && offlineOnly) offlineIds = availableIds(c) }
-        }
-        launch { followNetwork() }
+    /** Which tracks the queue keeps, see [setQueueFilter]. */
+    val queueFilter get() = QueueFilter.entries.firstOrNull { it.name == prefs.queueFilter.value } ?: QueueFilter.All
+    private fun passes(t: Track) = when (queueFilter) {
+        QueueFilter.All -> true
+        QueueFilter.Liked -> library.isLiked(t)
+        QueueFilter.NotLiked -> !library.isLiked(t)
     }
 
-    /** True while the phone has a default network; the debounce rides over Wi-Fi/mobile handovers. */
-    @OptIn(kotlinx.coroutines.FlowPreview::class)
-    private fun online() = callbackFlow {
-        val cm = context.getSystemService(ConnectivityManager::class.java)
-        val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { trySend(true) }
-            override fun onLost(network: Network) { trySend(cm.activeNetwork != null) }
-        }
-        trySend(cm.activeNetwork != null)
-        cm.registerDefaultNetworkCallback(cb)
-        awaitClose { cm.unregisterNetworkCallback(cb) }
-    }.debounce(1500).distinctUntilChanged()
-
-    private var offlineNote: Job? = null
-
-    /**
-     * Offline only follows the network: on without it, off when it is back. Undo, or the toggle in
-     * the menu, holds until the next change.
-     */
-    private suspend fun followNetwork() = online().collect { on ->
-        offlineNote?.cancel()
-        if (on != prefs.offlineOnly.value) return@collect
-        AppLog.d("ui", if (on) "Network is back, offline only off" else "No network, offline only on")
-        prefs.setOfflineOnly(!on); version++
-        if (!on) offlineNote = scope.launch {
-            snackbar.currentSnackbarData?.dismiss()
-            if (snackbar.showSnackbar("No network: offline only", "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-                prefs.setOfflineOnly(false); version++
-            }
-        }
-    }
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
     fun downloaded(t: Track): Boolean { version; return library.isDownloaded(t) }
 
@@ -213,18 +159,23 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val cat = app.catalog.value ?: return
         val items = q.ids.mapNotNull { cat.byId[it] }.map { library.mediaItem(it) }
         if (items.isEmpty()) return
+        library.queueSource = q.ids
         if (shuffle != null) c.shuffleModeEnabled = shuffle
         c.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
         c.playWhenReady = play
         c.prepare()
     }
 
-    /** Replaces the queue; the old one can be brought back from the snackbar. */
-    fun play(tracks: List<Track>, index: Int, shuffled: Boolean = false) = scope.launch {
+    /**
+     * Replaces the queue; the old one can be brought back from the snackbar. [index] is the tapped
+     * track, which plays even when the queue filter leaves it out; without it the queue starts at the top.
+     */
+    fun play(tracks: List<Track>, index: Int = -1, shuffled: Boolean = false) = scope.launch {
         val c = controller ?: return@launch
-        val list = tracks.filter { visible(it) }
-        if (list.isEmpty()) { toast("Nothing here is available offline"); return@launch }
-        val start = tracks.getOrNull(index)?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+        val tapped = tracks.getOrNull(index)
+        val list = tracks.filter { it == tapped || passes(it) }
+        if (list.isEmpty()) { toast("No ${queueFilter.title.lowercase()} tracks here"); return@launch }
+        val start = tapped?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val before = snapshot()
         val wasShuffled = c.shuffleModeEnabled
         // "Shuffle" turns shuffle on; a plain play keeps whatever mode the player is in.
@@ -233,6 +184,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         // A file check per track: for a 2600-track list that is too slow for the main thread.
         val items = withContext(Dispatchers.IO) { list.map { library.mediaItem(it) } }
         if (controller !== c) return@launch
+        library.queueSource = tracks.map { it.id }
         c.setMediaItems(items, if (shuffled) list.indices.random() else start, 0)
         c.prepare(); c.play()
         if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
@@ -247,15 +199,19 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun playNext(tracks: List<Track>) {
         val c = controller ?: return
-        if (c.mediaItemCount == 0) { play(tracks, 0); return }
-        c.addMediaItems(c.currentMediaItemIndex + 1, tracks.filter { visible(it) }.map { library.mediaItem(it) })
+        if (c.mediaItemCount == 0) { play(tracks); return }
+        val src = source()
+        val at = src.indexOf(currentId) + 1
+        library.queueSource = src.take(at) + tracks.map { it.id } + src.drop(at)
+        c.addMediaItems(c.currentMediaItemIndex + 1, tracks.filter { passes(it) }.map { library.mediaItem(it) })
         toast(if (tracks.size == 1) "Playing next: ${tracks[0].title}" else "Playing next: ${tracks.size} tracks")
     }
 
     fun addToEnd(tracks: List<Track>) {
         val c = controller ?: return
-        if (c.mediaItemCount == 0) { play(tracks, 0); return }
-        c.addMediaItems(tracks.filter { visible(it) }.map { library.mediaItem(it) })
+        if (c.mediaItemCount == 0) { play(tracks); return }
+        library.queueSource = source() + tracks.map { it.id }
+        c.addMediaItems(tracks.filter { passes(it) }.map { library.mediaItem(it) })
         toast(if (tracks.size == 1) "Added to queue: ${tracks[0].title}" else "Added to queue: ${tracks.size} tracks")
     }
 
@@ -266,15 +222,50 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         lastSwipe = now; return true
     }
 
+    /**
+     * Everything that was played or added, before the filter: the filter can be switched back.
+     * Moves and removals made in the queue are not kept here.
+     */
+    private fun source() = library.queueSource.ifEmpty { queueIds }
+
+    /** Keeps only the tracks of [source] that pass [f]; the current track plays on either way. */
+    fun setQueueFilter(f: QueueFilter) = scope.launch {
+        prefs.queueFilter.set(f.name)
+        val c = controller ?: return@launch
+        val cat = app.catalog.value ?: return@launch
+        if (c.mediaItemCount == 0) return@launch
+        val cur = c.currentMediaItemIndex
+        val src = source()
+        val at = src.indexOf(c.currentMediaItem?.mediaId).takeIf { it >= 0 }
+        fun items(ids: List<String>) = ids.mapNotNull { cat.byId[it] }.filter { passes(it) }.map { library.mediaItem(it) }
+        val (before, after) = withContext(Dispatchers.IO) {
+            if (at == null) emptyList<androidx.media3.common.MediaItem>() to items(src)
+            else items(src.take(at)) to items(src.drop(at + 1))
+        }
+        if (controller !== c || c.currentMediaItemIndex != cur) return@launch
+        AppLog.d("ui", "Queue filter ${f.name}: ${before.size + after.size + 1} of ${src.size} tracks")
+        // The current track is not touched, so it doesn't stop.
+        c.removeMediaItems(cur + 1, c.mediaItemCount)
+        c.removeMediaItems(0, cur)
+        c.addMediaItems(0, before)
+        c.addMediaItems(after)
+        // A new shuffle order with the current track first; added tracks would otherwise go in order.
+        if (c.shuffleModeEnabled) { c.shuffleModeEnabled = false; c.shuffleModeEnabled = true }
+    }
+
     fun moveInQueue(from: Int, to: Int) {
         queueIds = queueIds.toMutableList().apply { add(to, removeAt(from)) }
         controller?.moveMediaItem(from, to)
     }
 
-    fun removeFromQueue(index: Int) { controller?.removeMediaItem(index) }
+    fun removeFromQueue(index: Int) {
+        queueIds.getOrNull(index)?.let { id -> library.queueSource = source().toMutableList().apply { remove(id) } }
+        controller?.removeMediaItem(index)
+    }
     fun clearQueue() {
         val before = snapshot() ?: return
         controller?.clearMediaItems()
+        library.queueSource = emptyList()
         scope.launch {
             if (snackbar.showSnackbar("Queue cleared", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) restore(before, false)
         }

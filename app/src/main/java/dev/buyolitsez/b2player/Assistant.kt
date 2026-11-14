@@ -220,8 +220,9 @@ class Assistant(private val ui: Ui) {
               truly ambiguous and a wrong guess would be annoying.
             - Find tracks and albums with the search tools; the handles they return (t…, a…) are what the other tools take.
               Artist and album names in the library may be in Russian or English: try both spellings if nothing is found.
-            - To pick music by mood ("что-нибудь грустное"), search the candidates (for example liked tracks), choose by what you
-              know about the songs and artists, and play your choice. Say in one line what you put on.
+            - To pick music by mood ("что-нибудь грустное"), search the whole library, not only liked tracks, choose by what you
+              know about the songs and artists, and play your choice. Say in one line what you put on. Use liked_only only
+              when the user asks for liked music: the queue has its own liked filter.
             - Likes and playlists are the user's data: set_liked, create_playlist and add_to_playlist show the user the change,
               and the tool result says whether they applied or cancelled it. Don't ask for confirmation in text as well.
             - Each user message starts with the date and what is playing, in brackets.
