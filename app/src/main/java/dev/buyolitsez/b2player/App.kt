@@ -118,8 +118,14 @@ class App : Application() {
     /** Bumped on every like or unlike, from the app or the media notification, and on ratings from elsewhere. */
     val likesChanged = MutableStateFlow(0)
 
-    /** Syncs likes with the bucket; likes made in cmus re-read the lists. */
-    fun syncLikes() { if (library.syncLikes(b2)) likesChanged.update { it + 1 } }
+    /** Syncs likes with the bucket; likes made in cmus re-read the lists and download or delete those tracks. */
+    fun syncLikes() {
+        val ids = library.syncLikes(b2)
+        if (ids.isEmpty()) return
+        likesChanged.update { it + 1 }
+        val (liked, unliked) = (catalog.value?.tracks ?: return).filter { it.id in ids }.partition { library.isLiked(it) }
+        followLikes(liked, true); followLikes(unliked, false)
+    }
 
     /** Syncs album ratings with the bucket; ratings from cmus or the diary re-read the lists. */
     fun syncRatings() { if (ratings.sync(b2)) likesChanged.update { it + 1 } }
@@ -129,6 +135,17 @@ class App : Application() {
         val changed = tracks.filter { library.isLiked(it) != liked }
         if (changed.isEmpty()) return
         changed.forEach { library.setLiked(it, liked) }
+        followLikes(changed, liked)
+        likesChanged.value++
+        scope.launch(Dispatchers.IO) { runCatching { syncLikes() }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }
+        if (lastFm.connected) scope.launch(Dispatchers.IO) {
+            changed.forEach { t -> runCatching { lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
+        }
+    }
+
+    /** Downloads newly liked tracks or deletes unliked ones, as set in Settings. */
+    private fun followLikes(changed: List<Track>, liked: Boolean) {
+        if (changed.isEmpty()) return
         if (liked && prefs.autoDownloadLiked.value) {
             val one = changed.singleOrNull()
             DownloadWorker.enqueue(this, one?.let { "like:${it.id}" } ?: "likes:${System.currentTimeMillis()}",
@@ -139,11 +156,6 @@ class App : Application() {
             // CUE tracks share a file: keep it while another of its tracks is still liked.
             changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }
                 .distinctBy { it.path }.forEach { library.deleteDownload(it) }
-        }
-        likesChanged.value++
-        scope.launch(Dispatchers.IO) { runCatching { syncLikes() }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }
-        if (lastFm.connected) scope.launch(Dispatchers.IO) {
-            changed.forEach { t -> runCatching { lastFm.love(t, liked) }.onFailure { AppLog.w("lastfm", "Love failed: ${t.title}", it) } }
         }
     }
 

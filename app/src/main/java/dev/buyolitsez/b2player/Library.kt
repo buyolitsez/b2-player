@@ -183,10 +183,10 @@ class Library(context: Context, private val cache: Cache) {
     /**
      * Puts the local changes since the last sync on top of the bucket copy, so likes made in cmus
      * meanwhile are kept, and uploads the result if it differs. Likes are stored as differences
-     * from the catalog's "liked" flags, so catalog rebuilds keep them. Returns whether local likes changed.
+     * from the catalog's "liked" flags, so catalog rebuilds keep them. Returns the ids whose like changed here.
      */
     @Synchronized
-    fun syncLikes(b2: B2): Boolean {
+    fun syncLikes(b2: B2): Set<String> {
         val (plus, minus) = synchronized(likesLock) { set("liked+").toSet() to set("liked-").toSet() }
         val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
         fun arr(k: String) = j?.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
@@ -203,7 +203,8 @@ class Library(context: Context, private val cache: Cache) {
         return synchronized(likesLock) {
             // A like made during the sync stays on top; the sync it started uploads it.
             val localPlus = merge(newPlus, plus, set("liked+")); val localMinus = merge(newMinus, minus, set("liked-"))
-            val changed = localPlus != set("liked+") || localMinus != set("liked-")
+            fun diff(a: Set<String>, b: Set<String>) = (a - b) + (b - a)
+            val changed = diff(localPlus, set("liked+")) + diff(localMinus, set("liked-"))
             prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
                 .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).remove("likesDirty").apply()
             changed
