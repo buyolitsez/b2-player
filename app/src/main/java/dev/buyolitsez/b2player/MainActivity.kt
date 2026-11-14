@@ -60,9 +60,16 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) ui.open(Screen.Settings)
         ui.refreshCatalog()
-        // Likes made in cmus show up on return to the app and every minute while it is on screen.
+        // Likes made in cmus, and what it played for the Resume banner, show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }; delay(60_000) } }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    withContext(Dispatchers.IO) { runCatching { app.syncLikes() } }
+                    runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
+                        .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
+                    delay(60_000)
+                }
+            }
         }
         // Download progress and finished downloads refresh the "downloaded" marks in lists.
         lifecycleScope.launch {
@@ -214,6 +221,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         bottomBar = {
             // Above the keyboard when it is open, so the tabs, mini player and messages stay visible.
             Column(Modifier.background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))) {
+                ResumeBanner(ui, cat)
                 if (ui.tab != Tab.Now || screen != Screen.Root) MiniPlayer(ui, cat)
                 HorizontalDivider(color = Gray2)
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
