@@ -12,143 +12,79 @@ import org.json.JSONObject
 import java.io.File
 import java.util.zip.GZIPInputStream
 
-data class Track(
-    val path: String, val title: String, val artist: String, val album: Album,
-    val number: Int?, val disc: Int?, val duration: Double, val start: Double?, val size: Long,
-    val likedInCatalog: Boolean, val hasLyrics: Boolean = false,
-) {
-    /** Unique per track; CUE tracks share a file, so the start offset is part of the id. */
-    val id get() = if (start == null) path else "$path#$start"
-    val ext get() = path.substringAfterLast('.', "").lowercase()
-    val searchKey by lazy { searchFold("$title\u0000$artist") }
-}
-
-private val MARKS = Regex("\\p{Mn}+")
-
-/** Lowercase without accents, so "bjork" finds "Björk" and "ежик" finds "ёжик". */
-fun searchFold(s: String): String = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(MARKS, "")
-
-class Album(
-    val id: String, val dir: String, val title: String, val artist: String, val year: Int?, val cover: String?,
-    val added: Long, val genre: String?,
-) {
-    lateinit var tracks: List<Track>
-    val duration get() = tracks.sumOf { it.duration }
-    val searchKey by lazy { searchFold("$title\u0000$artist") }
-}
-
-class Folder(val name: String, val path: String) {
-    val folders = sortedMapOf<String, Folder>(String.CASE_INSENSITIVE_ORDER)
-    val tracks = ArrayList<Track>()
-    val allTracks: List<Track> by lazy { tracks + folders.values.flatMap { it.allTracks } }
-}
-
-class Catalog(val albums: List<Album>) {
-    val tracks = albums.flatMap { it.tracks }
-    val byId = tracks.associateBy { it.id }
-    val artists: List<Pair<String, List<Album>>> =
-        albums.groupBy { it.artist.lowercase() }.values
-            .map { list -> list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key to list }
-            .sortedBy { it.first.lowercase() }
-    /** Albums by genre tag; albums without one come last under an empty name. */
-    val genres: List<Pair<String, List<Album>>> =
-        albums.groupBy { it.genre?.lowercase().orEmpty() }.values
-            .map { list -> list.groupingBy { it.genre.orEmpty() }.eachCount().maxBy { it.value }.key to list }
-            .sortedWith(compareBy({ it.first.isEmpty() }, { it.first.lowercase() }))
-    val root = Folder("Folders", "").also { root ->
-        for (a in albums) {
-            var f = root
-            for (part in a.dir.split('/')) {
-                val parent = f
-                f = parent.folders.getOrPut(part) { Folder(part, if (parent.path.isEmpty()) part else "${parent.path}/$part") }
-            }
-            f.tracks.addAll(a.tracks)
+/** Streaming parse (android.util.JsonReader): about twice as fast as building org.json trees. */
+fun Catalog.Companion.parse(bytes: ByteArray): Catalog {
+    val gz = bytes.size > 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
+    val input = if (gz) GZIPInputStream(bytes.inputStream(), 1 shl 16) else bytes.inputStream()
+    val albums = ArrayList<Album>(2048)
+    android.util.JsonReader(input.bufferedReader()).use { r ->
+        r.beginObject()
+        while (r.hasNext()) {
+            if (r.nextName() != "albums") { r.skipValue(); continue }
+            r.beginArray()
+            while (r.hasNext()) albums.add(readAlbum(r))
+            r.endArray()
         }
+        r.endObject()
     }
+    return Catalog(albums)
+}
 
-    fun folder(path: String): Folder? {
-        var f = root
-        if (path.isEmpty()) return f
-        for (part in path.split('/')) f = f.folders[part] ?: return null
-        return f
-    }
+private fun android.util.JsonReader.str(): String? =
+    if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextString()
+private fun android.util.JsonReader.int(): Int? =
+    if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextInt()
 
-    companion object {
-        /** Streaming parse (android.util.JsonReader): about twice as fast as building org.json trees. */
-        fun parse(bytes: ByteArray): Catalog {
-            val gz = bytes.size > 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
-            val input = if (gz) GZIPInputStream(bytes.inputStream(), 1 shl 16) else bytes.inputStream()
-            val albums = ArrayList<Album>(2048)
-            android.util.JsonReader(input.bufferedReader()).use { r ->
+private class RawTrack(
+    val path: String, val title: String, val artist: String?, val number: Int?, val disc: Int?,
+    val duration: Double, val start: Double?, val size: Long, val liked: Boolean, val lyrics: Boolean,
+)
+
+private fun readAlbum(r: android.util.JsonReader): Album {
+    var id = ""; var dir = ""; var title = ""; var artist = ""; var year: Int? = null; var cover: String? = null; var added = 0L; var genre: String? = null
+    val raw = ArrayList<RawTrack>()
+    r.beginObject()
+    while (r.hasNext()) when (r.nextName()) {
+        "id" -> id = r.nextString()
+        "dir" -> dir = r.nextString()
+        "title" -> title = r.nextString()
+        "artist" -> artist = r.nextString()
+        "year" -> year = r.int()
+        "cover" -> cover = r.str()
+        "added" -> added = r.nextLong()
+        "genre" -> genre = r.str()
+        "tracks" -> {
+            r.beginArray()
+            while (r.hasNext()) {
+                var path = ""; var tTitle = ""; var tArtist: String? = null; var number: Int? = null; var disc: Int? = null
+                var duration = 0.0; var start: Double? = null; var size = 0L; var liked = false; var ly = false
                 r.beginObject()
-                while (r.hasNext()) {
-                    if (r.nextName() != "albums") { r.skipValue(); continue }
-                    r.beginArray()
-                    while (r.hasNext()) albums.add(readAlbum(r))
-                    r.endArray()
+                while (r.hasNext()) when (r.nextName()) {
+                    "path" -> path = r.nextString()
+                    "title" -> tTitle = r.nextString()
+                    "artist" -> tArtist = r.str()
+                    "track" -> number = r.int()
+                    "disc" -> disc = r.int()
+                    "duration" -> duration = r.nextDouble()
+                    "start" -> start = r.nextDouble()
+                    "size" -> size = r.nextLong()
+                    "liked" -> liked = r.nextBoolean()
+                    "ly" -> ly = r.nextBoolean()
+                    else -> r.skipValue()
                 }
                 r.endObject()
+                raw.add(RawTrack(path, tTitle, tArtist, number, disc, duration, start, size, liked, ly))
             }
-            return Catalog(albums)
+            r.endArray()
         }
-
-        private fun android.util.JsonReader.str(): String? =
-            if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextString()
-        private fun android.util.JsonReader.int(): Int? =
-            if (peek() == android.util.JsonToken.NULL) { nextNull(); null } else nextInt()
-
-        private class RawTrack(
-            val path: String, val title: String, val artist: String?, val number: Int?, val disc: Int?,
-            val duration: Double, val start: Double?, val size: Long, val liked: Boolean, val lyrics: Boolean,
-        )
-
-        private fun readAlbum(r: android.util.JsonReader): Album {
-            var id = ""; var dir = ""; var title = ""; var artist = ""; var year: Int? = null; var cover: String? = null; var added = 0L; var genre: String? = null
-            val raw = ArrayList<RawTrack>()
-            r.beginObject()
-            while (r.hasNext()) when (r.nextName()) {
-                "id" -> id = r.nextString()
-                "dir" -> dir = r.nextString()
-                "title" -> title = r.nextString()
-                "artist" -> artist = r.nextString()
-                "year" -> year = r.int()
-                "cover" -> cover = r.str()
-                "added" -> added = r.nextLong()
-                "genre" -> genre = r.str()
-                "tracks" -> {
-                    r.beginArray()
-                    while (r.hasNext()) {
-                        var path = ""; var tTitle = ""; var tArtist: String? = null; var number: Int? = null; var disc: Int? = null
-                        var duration = 0.0; var start: Double? = null; var size = 0L; var liked = false; var ly = false
-                        r.beginObject()
-                        while (r.hasNext()) when (r.nextName()) {
-                            "path" -> path = r.nextString()
-                            "title" -> tTitle = r.nextString()
-                            "artist" -> tArtist = r.str()
-                            "track" -> number = r.int()
-                            "disc" -> disc = r.int()
-                            "duration" -> duration = r.nextDouble()
-                            "start" -> start = r.nextDouble()
-                            "size" -> size = r.nextLong()
-                            "liked" -> liked = r.nextBoolean()
-                            "ly" -> ly = r.nextBoolean()
-                            else -> r.skipValue()
-                        }
-                        r.endObject()
-                        raw.add(RawTrack(path, tTitle, tArtist, number, disc, duration, start, size, liked, ly))
-                    }
-                    r.endArray()
-                }
-                else -> r.skipValue()
-            }
-            r.endObject()
-            val album = Album(id, dir, title, artist, year, cover, added, genre)
-            album.tracks = raw.map { t ->
-                Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics)
-            }
-            return album
-        }
+        else -> r.skipValue()
     }
+    r.endObject()
+    val album = Album(id, dir, title, artist, year, cover, added, genre)
+    album.tracks = raw.map { t ->
+        Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics)
+    }
+    return album
 }
 
 data class SavedQueue(val name: String, val ids: List<String>, val index: Int, val positionMs: Long)

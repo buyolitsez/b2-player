@@ -58,5 +58,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("com.google.guava:guava:33.3.1-android")
-    implementation("com.anthropic:anthropic-java:3.8.0")
+    implementation(project(":core"))
 }

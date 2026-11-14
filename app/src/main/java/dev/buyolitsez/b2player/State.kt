@@ -6,8 +6,6 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-data class Playlist(val id: String, val name: String, val trackIds: List<String>, val updated: Long)
-
 /** User playlists, kept in prefs and synced to state/playlists.json in the bucket. */
 class Playlists(context: Context) {
     private val prefs = context.getSharedPreferences("playlists", Context.MODE_PRIVATE)
@@ -63,8 +61,6 @@ class Playlists(context: Context) {
 
     companion object { const val KEY = "state/playlists.json" }
 }
-
-data class Play(val trackId: String, val time: Long)
 
 /**
  * Listening history: one line per counted play in filesDir/history.tsv, merged with
