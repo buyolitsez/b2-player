@@ -254,16 +254,11 @@ fun AssistantScreen(ui: Ui) {
     Column(Modifier.fillMaxSize().padding(bottom = LocalListBottom.current)) {
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(20.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (a.entries.isEmpty()) item {
-                // Empty chat: a few requests to start from; a tap sends one.
                 Column(Modifier.fillParentMaxHeight(0.8f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)), Alignment.Center) {
                         Icon(Icons.Default.AutoAwesome, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
                     }
-                    Text("What should we play?", Modifier.padding(top = 16.dp, bottom = 20.dp), style = MaterialTheme.typography.headlineSmall)
-                    listOf("Включи что-нибудь грустное из лайкнутых", "Поставь альбом Янки", "Что я слушал в октябре?").forEach { q ->
-                        Text(q, Modifier.padding(vertical = 4.dp).clip(RoundedCornerShape(18.dp)).background(Gray2).clickable { a.send(q) }.padding(16.dp, 10.dp),
-                            style = MaterialTheme.typography.bodyMedium)
-                    }
+                    Text("What should we play?", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
                 }
             }
             items(a.entries) { e -> ChatBubble(e) }
