@@ -215,11 +215,11 @@ class Library(context: Context, private val cache: Cache) {
                     .setExtras(Bundle().apply { putString("path", t.path) })
                     .build()
             )
-        if (t.start != null) {
+        t.start?.let { start ->
             b.setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs((t.start * 1000).toLong())
-                    .setEndPositionMs(((t.start + t.duration) * 1000).toLong()).build()
+                    .setStartPositionMs((start * 1000).toLong())
+                    .setEndPositionMs(((start + t.duration) * 1000).toLong()).build()
             )
         }
         return b.build()
