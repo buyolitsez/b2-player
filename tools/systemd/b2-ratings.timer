@@ -1,0 +1,10 @@
+# Install: cp tools/systemd/b2-ratings.* ~/.config/systemd/user/ && systemctl --user enable --now b2-ratings.timer
+[Unit]
+Description=Sync album ratings every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

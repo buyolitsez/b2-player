@@ -56,7 +56,10 @@ class Prefs(context: Context) {
     val manualWifiOnly = Bool("manualWifiOnly", false)
     // Library
     val albumGrid = Bool("albumGrid", true)
-    val albumSortRecent = Bool("albumSortRecent", false)
+    /** An [AlbumSort] name. */
+    val albumSort = Str("albumSort", "Artist")
+    /** "By rating" shows albums rated at least this; 0 shows all, -1 only the unrated ones. */
+    val minRating = Num("minRating", 0)
     /** "Recently added" shows albums added in this many days; 0 shows all. */
     val recentDays = Num("recentDays", 0)
     val gridColumns = Num("gridColumns", 3)
@@ -90,6 +93,7 @@ class App : Application() {
     lateinit var library: Library
     lateinit var prefs: Prefs
     lateinit var playlists: Playlists
+    lateinit var ratings: Ratings
     lateinit var history: History
     lateinit var lastFm: LastFm
     lateinit var audioFx: AudioFx
@@ -110,11 +114,14 @@ class App : Application() {
     val sleepAfterAlbum = MutableStateFlow<String?>(null)
     val sleepAfterTracks = MutableStateFlow<Int?>(null)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    /** Bumped on every like or unlike, from the app or the media notification. */
+    /** Bumped on every like or unlike, from the app or the media notification, and on ratings from elsewhere. */
     val likesChanged = MutableStateFlow(0)
 
     /** Syncs likes with the bucket; likes made in cmus re-read the lists. */
     fun syncLikes() { if (library.syncLikes(b2)) likesChanged.update { it + 1 } }
+
+    /** Syncs album ratings with the bucket; ratings from cmus or the diary re-read the lists. */
+    fun syncRatings() { if (ratings.sync(b2)) likesChanged.update { it + 1 } }
 
     /** Likes or unlikes tracks: downloads or deletes them as set, syncs likes and mirrors them to Last.fm. */
     fun setLiked(tracks: List<Track>, liked: Boolean) {
@@ -167,6 +174,7 @@ class App : Application() {
         AppLog.init(this, prefs.verboseLogs.value)
         b2 = B2(this)
         playlists = Playlists(this)
+        ratings = Ratings(this)
         history = History(this)
         lastFm = LastFm(this)
         audioFx = AudioFx(this)

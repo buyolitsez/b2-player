@@ -28,6 +28,8 @@ enum class LibrarySection { Albums, Artists, Genres, Folders }
 /** Which tracks of what was played the queue keeps. */
 enum class QueueFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
 
+enum class AlbumSort(val title: String) { Artist("By artist"), Recent("Recently added"), Rating("By rating") }
+
 sealed interface Screen {
     data object Root : Screen
     data class AlbumView(val album: Album) : Screen
@@ -145,6 +147,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
     fun downloaded(t: Track): Boolean { version; return library.isDownloaded(t) }
+    fun rating(a: Album): Double? { version; return app.ratings.get(a.id) }
+
+    fun setRating(a: Album, rating: Int) {
+        app.ratings.set(a.id, rating)
+        version++
+        app.scope.launch(Dispatchers.IO) { runCatching { app.syncRatings() }.onFailure { AppLog.w("sync", "Ratings sync failed", it) } }
+    }
 
     // ---------- queue ----------
 
@@ -443,10 +452,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val syncStarted = System.currentTimeMillis()
         syncInBackground {
             library.syncLikes(app.b2)
+            app.ratings.sync(app.b2)
             app.playlists.sync(app.b2)
             app.history.sync(app.b2)
             runCatching { app.lastFm.flush() }
-            AppLog.i("sync", "Likes, playlists and history synced in ${System.currentTimeMillis() - syncStarted} ms")
+            AppLog.i("sync", "Likes, ratings, playlists and history synced in ${System.currentTimeMillis() - syncStarted} ms")
         }.join()
         version++
     }
