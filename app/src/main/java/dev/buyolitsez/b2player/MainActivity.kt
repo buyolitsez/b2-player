@@ -322,9 +322,12 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                 })
                 SwipeToDismissBox(state, backgroundContent = {}) {
                     Snackbar(
-                        data, Modifier.padding(horizontal = 24.dp).shadow(16.dp, RoundedCornerShape(24.dp)), shape = RoundedCornerShape(24.dp),
-                        containerColor = UiColor(0xFF2A2A2A), contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary,
-                    )
+                        Modifier.padding(horizontal = 24.dp).shadow(16.dp, RoundedCornerShape(24.dp)), shape = RoundedCornerShape(24.dp),
+                        containerColor = UiColor(0xFF2A2A2A), contentColor = MaterialTheme.colorScheme.onSurface,
+                        action = data.visuals.actionLabel?.let { label ->
+                            { TextButton({ data.performAction() }) { Text(label, color = MaterialTheme.colorScheme.primary) } }
+                        },
+                    ) { Text(data.visuals.message, Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 }
             }
         }
