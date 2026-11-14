@@ -32,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
 import dev.chrisbanes.haze.HazeTint
@@ -312,14 +313,18 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         if (ui.nowOpen && c != null) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}) {
             if (ui.queueOpen) QueueScreen(ui, c) else NowPlayingScreen(ui, c)
         }
-        SnackbarHost(ui.snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = if (ui.nowOpen) 8.dp else 150.dp)) { data ->
+        // Messages float just above the mini player, in its shape.
+        SnackbarHost(ui.snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = if (ui.nowOpen) 8.dp else 128.dp)) { data ->
             key(data) {
                 val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
                     if (v != SwipeToDismissBoxValue.Settled) data.dismiss()
                     true
                 })
                 SwipeToDismissBox(state, backgroundContent = {}) {
-                    Snackbar(data, containerColor = Gray2, contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary)
+                    Snackbar(
+                        data, Modifier.padding(horizontal = 24.dp).shadow(16.dp, RoundedCornerShape(24.dp)), shape = RoundedCornerShape(24.dp),
+                        containerColor = UiColor(0xFF2A2A2A), contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
