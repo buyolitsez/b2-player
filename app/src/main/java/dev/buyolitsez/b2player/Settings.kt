@@ -45,7 +45,6 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingsGroup("Playback") {
         SettingChoice("Preload upcoming tracks", "Downloads the next tracks of the queue into the cache, for weak networks",
             listOf(0, 1, 2, 3, 5), p.prefetchCount.value, { if (it == 0) "Off" else "$it tracks" }) { p.prefetchCount.set(it) }
-        SettingSwitch("Skip silence", "Cut silent parts inside tracks", p.skipSilence)
         SettingSwitch("Restore queue on start", "Continue where you stopped after the app was closed", p.restoreQueue)
         SettingSwitch("Offer undo when the queue is replaced", "Shows “Undo” after you start another album", p.undoReplace)
         }
