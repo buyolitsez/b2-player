@@ -140,7 +140,7 @@ fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, mo
 
 /**
  * Search field above a list, opened with the search button in the top bar; the screen filters its
- * own list with [searchFold] of the text. A filled-in filter stays visible.
+ * own list with [searchFold] of the text. A filled-in filter stays visible, and erasing it keeps it open.
  */
 @UnstableApi
 @Composable
@@ -148,7 +148,7 @@ fun FilterField(ui: Ui, value: String, onChange: (String) -> Unit) {
     if (!ui.filterOpen && value.isEmpty()) return
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (value.isEmpty()) runCatching { focus.requestFocus() } }
-    SearchBox(value, onChange, "Search", Modifier.focusRequester(focus))
+    SearchBox(value, { if (it.isEmpty()) ui.filterOpen = true; onChange(it) }, "Search", Modifier.focusRequester(focus))
 }
 
 /** A small grey label in capitals above a group of rows. */
