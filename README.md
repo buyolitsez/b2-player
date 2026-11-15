@@ -165,7 +165,8 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=~/Android/Sdk ./gradlew asse
 adb -s emulator-5554 install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-The emulator uses its own read-only B2 key, so tests never write likes, playlists, history or logs to the bucket.
+The emulator uses its own read-only B2 key, so tests never write likes, playlists, history or logs to the bucket
+(uploads fail with HTTP 401, and a "Sync failed" line stays on top of the screen).
 An APK built with another machine's debug key does not install over the phone's app.
 
 The version is `baseVersion.N` (e.g. 0.5.35), where N is the number of commits in `HEAD`. The versionCode is the
