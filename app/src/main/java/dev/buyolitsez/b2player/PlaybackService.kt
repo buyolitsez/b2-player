@@ -69,7 +69,6 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        player.skipSilenceEnabled = app.prefs.skipSilence.value
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { app.audioFx.attach(audioSessionId) }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
@@ -270,7 +269,6 @@ class PlaybackService : MediaSessionService() {
             retriedAuth = false
             // Keep the position fresh, so a killed process resumes close to where it was.
             if (++tick % 10 == 0) saveQueue(player)
-            player.skipSilenceEnabled = app.prefs.skipSilence.value
             listenedMs += 1000
             val t = track(player.currentMediaItem) ?: continue
             if (counted || t.duration < 30 || listenedMs < minOf(t.duration * 500, 240_000.0)) continue

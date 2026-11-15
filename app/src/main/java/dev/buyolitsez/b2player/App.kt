@@ -44,7 +44,6 @@ class Prefs(context: Context) {
 
     // Playback
     val prefetchCount = Num("prefetchCount", 3)
-    val skipSilence = Bool("skipSilence", false)
     val restoreQueue = Bool("restoreQueue", true)
     val undoReplace = Bool("undoReplace", true)
     /** A [QueueFilter] name. */
