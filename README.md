@@ -50,7 +50,7 @@ The scripts take their paths from environment variables:
 tools/sync-music.sh --dry-run          # show what would change
 tools/sync-music.sh                    # upload new and changed files of the music folder -> music/
 tools/sync-music.sh -- "rock/Artist"   # only these subfolders
-tools/publish-catalog.sh               # catalog + covers, then check that every path exists in the bucket
+tools/publish-catalog.sh               # check that every path is in the bucket, then upload catalog + covers
 tools/apply-tags.py                    # tag edits from the phone: what would change in the files
 tools/apply-tags.py --apply            # write them to the files and drop them from state/tags.json
 tools/sync-ratings.py                  # album ratings: what would change in the diary and state/ratings.json
