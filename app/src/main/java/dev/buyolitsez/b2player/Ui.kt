@@ -19,6 +19,7 @@ import androidx.media3.session.MediaController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -453,7 +454,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         toast("Saved as playlist")
     }
 
-    private fun syncPlaylists() = syncInBackground { app.playlists.sync(app.b2) }
+    private var playlistSync: Job? = null
+
+    /** 2 s after the last edit, so that dragging a track uploads once and not on every step; unsent edits stay dirty. */
+    private fun syncPlaylists() {
+        playlistSync?.cancel()
+        playlistSync = scope.launch { delay(2000); syncInBackground { app.playlists.sync(app.b2) } }
+    }
 
     /** Imports Musicolet-style .m3u files; tracks are matched by file name and folder, then by tags. */
     fun importM3u(uris: List<Uri>) = scope.launch {
