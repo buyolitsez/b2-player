@@ -278,7 +278,7 @@ fun TrackSheet(ui: Ui) {
                 tile("Play next", Icons.AutoMirrored.Filled.PlaylistPlay) { ui.playNext(listOf(t)) }
                 if (req.queueIndex == null) tile("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) { ui.addToEnd(listOf(t)) }
                 else tile("Remove", Icons.Default.RemoveCircleOutline) { ui.removeFromQueue(req.queueIndex) }
-                tile("Add to playlist", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = listOf(t) }
+                tile("Playlists", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = listOf(t) }
             }
             req.extra?.invoke(this, close)
             if (ui.downloaded(t)) MenuItem("Remove download", Icons.Default.Delete, close) { ui.deleteDownloads(listOf(t)) }
@@ -314,24 +314,36 @@ fun DeleteDialog(ui: Ui) {
     )
 }
 
-/** Dialog for "Add to playlist…": pick a playlist or create one. */
+/**
+ * Dialog for "Add to playlist…": pick a playlist or create one. For one track it shows which
+ * playlists have it, and a tap adds or removes it there, keeping the dialog open.
+ */
 @UnstableApi
 @Composable
 fun AddToPlaylistDialog(ui: Ui) {
     val tracks = ui.addToPlaylist ?: return
     var name by remember { mutableStateOf("") }
     val lists = remember(ui.version) { ui.app.playlists.all }
+    val single = tracks.singleOrNull()
     AlertDialog(
         onDismissRequest = { ui.addToPlaylist = null }, containerColor = Gray2,
-        title = { Text(if (tracks.size == 1) "Add “${tracks[0].title}” to" else "Add ${tracks.size} tracks to") },
+        title = { Text(if (single != null) "“${single.title}” in playlists" else "Add ${tracks.size} tracks to") },
         text = {
             Column {
                 lists.forEach { p ->
+                    val has = single != null && single.id in p.trackIds
                     Row(
-                        Modifier.fillMaxWidth().clickable { ui.addToPlaylist(p, tracks); ui.addToPlaylist = null }.padding(vertical = 10.dp),
+                        Modifier.fillMaxWidth().clickable {
+                            when {
+                                single == null -> { ui.addToPlaylist(p, tracks); ui.addToPlaylist = null }
+                                has -> ui.removeFromPlaylist(p, single)
+                                else -> ui.addToPlaylist(p, tracks)
+                            }
+                        }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(20.dp), tint = Muted)
+                        if (has) Icon(Icons.Default.CheckCircle, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        else Icon(Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(20.dp), tint = Muted)
                         Text(p.name, Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${p.trackIds.size}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
@@ -342,7 +354,7 @@ fun AddToPlaylistDialog(ui: Ui) {
         confirmButton = {
             TextButton({ ui.createPlaylist(name, tracks); ui.toast("Playlist created"); ui.addToPlaylist = null }, enabled = name.isNotBlank()) { Text("Create") }
         },
-        dismissButton = { TextButton({ ui.addToPlaylist = null }) { Text("Cancel") } },
+        dismissButton = { TextButton({ ui.addToPlaylist = null }) { Text(if (single != null) "Done" else "Cancel") } },
     )
 }
 

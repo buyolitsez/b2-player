@@ -474,6 +474,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         toast("Added to ${p.name}")
     }
 
+    fun removeFromPlaylist(p: Playlist, t: Track) = editPlaylist(p.id) { pl -> pl.copy(trackIds = pl.trackIds.filter { it != t.id }) }
+
     fun editPlaylist(id: String, f: (Playlist) -> Playlist) { app.playlists.update(id, f); version++; syncPlaylists() }
     fun deletePlaylist(id: String) { app.playlists.delete(id); version++; syncPlaylists() }
 
