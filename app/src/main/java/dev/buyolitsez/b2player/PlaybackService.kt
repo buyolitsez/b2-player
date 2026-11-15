@@ -3,11 +3,14 @@ package dev.buyolitsez.b2player
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.session.PlatformQueue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DataSpec
@@ -40,6 +43,7 @@ import java.util.concurrent.Executors
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private val main = Handler(Looper.getMainLooper())
     private val app get() = application as App
     private val prefetchExecutor = Executors.newSingleThreadExecutor()
     private var prefetching = listOf<CacheWriter>()
@@ -128,6 +132,10 @@ class PlaybackService : MediaSessionService() {
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
                     saveQueue(player)
                 }
+                // After Media3 has emptied the platform queue for this change.
+                if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                    main.post { session?.let { PlatformQueue.set(it, player, 50) } }
+                }
                 if (events.contains(Player.EVENT_TIMELINE_CHANGED) && p.isPlaying) prefetch(player)
             }
         })
@@ -178,6 +186,9 @@ class PlaybackService : MediaSessionService() {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
                         .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).add(SHUFFLE_ORDER).build())
+                        // The platform session (Bluetooth, system UI) gets these commands too: without the timeline Media3
+                        // doesn't publish the whole queue there, and PlatformQueue puts in the tracks around the current one.
+                        .apply { if (s.isMediaNotificationController(c)) setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon().remove(Player.COMMAND_GET_TIMELINE).build()) }
                         .build()
                 override fun onCustomCommand(
                     s: MediaSession, c: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle,
