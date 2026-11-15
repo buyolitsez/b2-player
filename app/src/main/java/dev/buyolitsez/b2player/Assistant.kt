@@ -76,6 +76,7 @@ class Assistant(private val ui: Ui) {
 
     private var confirmWait = 0L
     private var job: Job? = null
+    private var keptAlive = false
 
     private val chat = AssistantChat(object : AssistantHost {
         override val intro = """
@@ -126,6 +127,8 @@ class Assistant(private val ui: Ui) {
             queued.add(text.trim()); return
         }
         entries.add(ChatEntry.User(text.trim()))
+        // Started while the app is on screen: messages queued meanwhile go out on the same service, maybe in the background.
+        if (!keptAlive) { keptAlive = true; AssistantService.start(ui.context) }
         busy = true
         val started = SystemClock.elapsedRealtime()
         confirmWait = 0L
@@ -143,6 +146,7 @@ class Assistant(private val ui: Ui) {
             } finally {
                 busy = false
                 if (queued.isNotEmpty()) send(queued.joinToString("\n").also { queued.clear() })
+                else { keptAlive = false; AssistantService.stop() }
             }
         }
     }

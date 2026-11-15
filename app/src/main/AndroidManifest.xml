@@ -35,6 +35,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!-- Keeps the network while the assistant answers in the background. -->
+        <service
+            android:name=".AssistantService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <receiver android:name=".DismissReceiver" android:exported="false" />
         <!-- Downloads run as foreground workers. -->
