@@ -81,7 +81,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--catalog", default=f"{home}/.cache/b2-player/catalog.json.gz")
     ap.add_argument("--music", default=f"{home}/Music")
-    ap.add_argument("--mount", default=f"{home}/b2music/music", help="the bucket's music/, for files not in --music")
+    ap.add_argument("--mount", default=f"{home}/b2music", help="the bucket's music/ mounted, for files not in --music")
     ap.add_argument("--out", default=f"{home}/.cache/b2-player")
     ap.add_argument("--min-kbps", type=int, default=256, help="lighter files are not copied")
     ap.add_argument("--kbps", type=int, default=128)
