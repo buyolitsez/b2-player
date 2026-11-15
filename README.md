@@ -145,6 +145,30 @@ Install the release build: the debug build is several times slower (catalog pars
 ≈0.16 s, startup ≈470 ms instead of ≈200 ms). Both are signed with the debug key, so switching between
 them keeps the app's data.
 
+### Emulator
+
+For testing without the phone, the library computer (arch, x86_64 with KVM) runs a headless emulator. The arm64-only
+APK works there through the image's ARM translation, so it is fine for checking features but not for timing them.
+
+```bash
+# once: SDK in ~/Android/Sdk, then
+sdkmanager platform-tools emulator "platforms;android-36" "build-tools;36.0.0" \
+  "system-images;android-34;google_apis;x86_64"
+avdmanager create avd -n b2test -k "system-images;android-34;google_apis;x86_64" -d pixel_6
+
+# start (drop -no-window to see it) and stop
+emulator -avd b2test -no-window -no-audio -gpu swiftshader_indirect -no-snapshot-save -no-boot-anim &
+adb -s emulator-5554 emu kill
+
+# build and install (the phone is often on the same adb, so always pass -s)
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=~/Android/Sdk ./gradlew assembleRelease
+adb -s emulator-5554 install -r app/build/outputs/apk/release/app-release.apk
+```
+
+The emulator uses its own read-only B2 key, so tests never write likes, playlists, history or logs to the bucket
+(uploads fail with HTTP 401, and a "Sync failed" line stays on top of the screen).
+An APK built with another machine's debug key does not install over the phone's app.
+
 The version is `baseVersion.N` (e.g. 0.5.35), where N is the number of commits in `HEAD`. The versionCode is the
 commit time of `HEAD` in minutes, so it keeps growing after a squash merge.
 Every push to main publishes a `vX.Y.N` release on GitHub Releases. CI signs it with the debug key from the
