@@ -72,11 +72,18 @@ fun SmallIcon(icon: ImageVector, tint: Color = MaterialTheme.colorScheme.onSurfa
 @UnstableApi
 @Composable
 fun downloadProgress(ui: Ui, tracks: List<Track>): Float? {
-    val queued by DownloadWorker.progress.collectAsState()
-    val files = tracks.distinctBy { it.path }
-    if (files.none { it.path in queued }) return null
-    val done = files.sumOf { t -> t.size * (queued[t.path] ?: if (ui.library.isDownloaded(t)) 1f else 0f).toDouble() }
-    return (done / files.sumOf { it.size }.coerceAtLeast(1)).toFloat()
+    val queued = DownloadWorker.progress.collectAsState()
+    // derived, so that a progress step of another track does not recompose this one
+    val progress by remember(tracks) {
+        val files = tracks.distinctBy { it.path }
+        derivedStateOf {
+            val q = queued.value
+            if (files.none { it.path in q }) null
+            else (files.sumOf { t -> t.size * (q[t.path] ?: if (ui.library.isDownloaded(t)) 1f else 0f).toDouble() } /
+                files.sumOf { it.size }.coerceAtLeast(1)).toFloat()
+        }
+    }
+    return progress
 }
 
 /** A ring that fills with [progress] around a download arrow. */

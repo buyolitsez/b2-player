@@ -36,9 +36,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 val dst = app.library.offlineFile(p)
                 if (!dst.exists()) {
                     try {
-                        // Whole percents only, so the rings redraw ~100 times per file and not on every read.
+                        // Steps of 10 %: each step copies the map of every queued path and the rings animate between steps.
                         app.b2.download(Library.MUSIC + p, dst) { f ->
-                            val pct = (f * 100).toInt() / 100f
+                            val pct = (f * 10).toInt() / 10f
                             if (_progress.value[p] != pct) _progress.update { it + (p to pct) }
                         }
                     } catch (e: Exception) { failed++; AppLog.w("download", "Failed: $p", e) }
