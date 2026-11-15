@@ -73,10 +73,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             }
         } finally {
             _progress.update { it - paths.toSet() }
-            if (_progress.value.isEmpty()) hidden = false
         }
         AppLog.i("download", "$title: ${paths.size - failed} of ${paths.size} done, attempt ${runAttemptCount + 1}")
-        if (failed > 0 && runAttemptCount < 3) Result.retry() else Result.success()
+        val retry = failed > 0 && runAttemptCount < 3
+        // A swiped notification stays away also while the work waits for the network to come back.
+        if (!retry && _progress.value.isEmpty()) hidden = false
+        if (retry) Result.retry() else Result.success()
     }
 
     private fun notification(title: String, done: Int, all: Int, share: Float): Notification {
