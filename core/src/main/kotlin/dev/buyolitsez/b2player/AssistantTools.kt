@@ -64,12 +64,14 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         return "[$now. " + (if (cur != null) "Now ${if (host.playing) "playing" else "paused"}: ${line(cur)}. Queue: $queue tracks, at ${host.currentIndex + 1}" else "Nothing is playing") + "]"
     }
 
-    private fun matches(field: String, q: String?) = q.isNullOrBlank() || searchFold(q) in searchFold(field)
+    /** [fq] is already folded, once per call: the filters run over every track. */
+    private fun matches(field: String, fq: String?) = fq == null || fq in searchFold(field)
 
     private fun JsonNode.str(k: String) = path(k).asText("").takeIf { it.isNotBlank() }
 
     fun searchTracks(a: JsonNode): String {
-        val text = a.str("text"); val artist = a.str("artist"); val album = a.str("album"); val genre = a.str("genre")
+        val text = a.str("text")?.let(::searchFold); val artist = a.str("artist")?.let(::searchFold)
+        val album = a.str("album")?.let(::searchFold); val genre = a.str("genre")?.let(::searchFold)
         val playlist = a.str("playlist")?.let { name -> host.playlists.firstOrNull { it.name.equals(name, true) } ?: return "No playlist named “$name”" }
         val inPlaylist = playlist?.trackIds?.toHashSet()
         val likedOnly = a.path("liked_only").asBoolean()
@@ -77,19 +79,19 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         val found = cat.tracks.filter { t ->
             (inPlaylist == null || t.id in inPlaylist) && (!likedOnly || host.isLiked(t)) &&
                 matches(t.artist + " " + t.album.artist, artist) && matches(t.album.title, album) && matches(genre(t.album), genre) &&
-                (text.isNullOrBlank() || searchFold(text) in t.searchKey || searchFold(text) in t.album.searchKey)
+                (text == null || text in t.searchKey || text in t.album.searchKey)
         }
         return result(found.size, found.take(limit).map { line(it) })
     }
 
     fun searchAlbums(a: JsonNode): String {
-        val text = a.str("text"); val artist = a.str("artist"); val genre = a.str("genre")
+        val text = a.str("text")?.let(::searchFold); val artist = a.str("artist")?.let(::searchFold); val genre = a.str("genre")?.let(::searchFold)
         val from = a.path("year_from").asInt(0); val to = a.path("year_to").asInt(9999)
         val rated = a.path("rated").asText("any"); val minRating = a.path("min_rating").asDouble(0.0)
         val limit = a.path("limit").asInt(100).coerceIn(1, 400)
         val found = cat.albums.filter { al ->
             val r = host.rating(al)
-            matches(al.artist, artist) && matches(genre(al), genre) && (text.isNullOrBlank() || searchFold(text) in al.searchKey) &&
+            matches(al.artist, artist) && matches(genre(al), genre) && (text == null || text in al.searchKey) &&
                 (al.year ?: 0) in from..to && (r ?: 0.0) >= minRating &&
                 when (rated) { "rated" -> r != null; "unrated" -> r == null; else -> true }
         }.let { list -> if (a.path("sort").asText() == "rating") list.sortedByDescending { host.rating(it) ?: 0.0 } else list }
