@@ -570,14 +570,19 @@ fun plays(n: Int) = if (n == 1) "1 play" else "$n plays"
 fun QueueScreen(ui: Ui, cat: Catalog) {
     val ids = ui.queueIds
     val tracks = ids.map { cat.byId[it] }
-    // Rows follow the play order; with shuffle on that is not the queue order, so dragging is off then.
+    // Rows follow the play order; with shuffle on that is not the queue order.
     val order = ui.playOrder.takeIf { it.size == ids.size } ?: ids.indices.toList()
     val keys = stableKeys(ids)
     val indexOf = remember(keys) { keys.withIndex().associate { (i, k) -> k to i } }
     val listState = rememberLazyListState()
     val reorder = rememberReorderableLazyListState(listState) { from, to ->
-        val a = indexOf[from.key]; val b = indexOf[to.key]
-        if (a != null && b != null) ui.moveInQueue(a, b)
+        val a = indexOf[from.key] ?: return@rememberReorderableLazyListState
+        val b = indexOf[to.key] ?: return@rememberReorderableLazyListState
+        // A moved track plays after the track above it in the queue (see Ui.moveInQueue), so it goes
+        // after the row it passes going down, or after the row above that one going up.
+        val pb = order.indexOf(b)
+        val above = if (pb > order.indexOf(a)) b else order.getOrNull(pb - 1)
+        ui.moveInQueue(a, above?.let { if (a < it) it else it + 1 } ?: 0)
     }
     val at = order.indexOf(ui.currentIndex).coerceAtLeast(0)
     val saved = remember(ui.version) { ui.library.savedQueues }
@@ -594,7 +599,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     LaunchedEffect(Unit) { if (played.isNotEmpty()) listState.scrollToItem(played.size + 1) }
     // Saved queues are at the top of the list, above what played.
     LaunchedEffect(showSaved) { if (showSaved) listState.animateScrollToItem(0) }
-    val drag = !ui.shuffle && fq.isEmpty()
+    val drag = fq.isEmpty()
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val h = with(LocalDensity.current) { maxHeight.toPx() }
         Box(Modifier.fillMaxSize().background(fade(if (ui.prefs.coverTint.value) ui.colors.background else Color.Transparent, h, 0.75f)))

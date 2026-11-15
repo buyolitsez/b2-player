@@ -2,6 +2,7 @@ package dev.buyolitsez.b2player
 
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -17,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -99,6 +101,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var nextId by mutableStateOf<String?>(null)
     /** Queue indices in play order: the shuffle order when shuffle is on. */
     var playOrder by mutableStateOf(listOf<Int>())
+    /** The queue and play order [moveInQueue] expects, see [sync]. */
+    private var movedOrder: Pair<List<String>, List<Int>>? = null
 
     fun sync(p: Player) {
         currentId = p.currentMediaItem?.mediaId
@@ -109,10 +113,15 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         repeat = p.repeatMode
         nextId = p.nextMediaItemIndex.takeIf { it >= 0 }?.let { p.getMediaItemAt(it).mediaId }
         val tl = p.currentTimeline
-        playOrder = if (!p.shuffleModeEnabled || tl.isEmpty) queueIds.indices.toList()
+        val order = if (!p.shuffleModeEnabled || tl.isEmpty) queueIds.indices.toList()
         else generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
             tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true).takeIf { i -> i != C.INDEX_UNSET }
         }.toList().takeIf { it.size == queueIds.size } ?: queueIds.indices.toList()
+        // After a move the controller shows the moved track at a random place in the play order until the
+        // player's order arrives; a dragged row would jump there and back.
+        val moved = movedOrder?.takeIf { it.first == queueIds && p.shuffleModeEnabled }
+        if (moved == null || moved.second == order) movedOrder = null
+        playOrder = moved?.second ?: order
     }
 
     // ---------- navigation ----------
@@ -236,17 +245,29 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     /**
      * Everything that was played or added, before the filter: the filter can be switched back.
-     * Moves and removals made in the queue are not kept here. Without the current track it is stale,
-     * e.g. from before an update, and the queue itself is used.
+     * Without the current track it is stale, e.g. from before an update, and the queue itself is used.
      */
     private fun source() = library.queueSource.takeIf { currentId in it } ?: queueIds
 
-    /** Keeps only the tracks of [source] that pass [f]; the current track plays on either way. */
-    fun setQueueFilter(f: QueueFilter) = scope.launch {
+    /** With shuffle on, [source] in play order, so a filter change keeps the order; see [setQueueFilter]. */
+    private var shuffledSource = listOf<String>()
+
+    private var filterJob: Job? = null
+
+    /**
+     * Keeps only the tracks of [source] that pass [f]; the current track plays on either way. A quick
+     * second tap cancels the first one while it still prepares the tracks: both would edit the queue.
+     */
+    fun setQueueFilter(f: QueueFilter) {
         prefs.queueFilter.set(f.name)
-        val c = controller ?: return@launch
-        val cat = app.catalog.value ?: return@launch
-        if (c.mediaItemCount == 0) return@launch
+        filterJob?.cancel()
+        filterJob = scope.launch { applyQueueFilter() }
+    }
+
+    private suspend fun applyQueueFilter() {
+        val c = controller ?: return
+        val cat = app.catalog.value ?: return
+        if (c.mediaItemCount == 0) return
         val cur = c.currentMediaItemIndex
         val src = source()
         library.queueSource = src
@@ -256,19 +277,73 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             if (at == null) emptyList<androidx.media3.common.MediaItem>() to items(src)
             else items(src.take(at)) to items(src.drop(at + 1))
         }
-        if (controller !== c || c.currentMediaItemIndex != cur) return@launch
-        AppLog.d("ui", "Queue filter ${f.name}: ${before.size + after.size + 1} of ${src.size} tracks")
+        if (controller !== c || c.currentMediaItemIndex != cur) return
+        AppLog.d("ui", "Queue filter ${queueFilter.name}: ${before.size + after.size + 1} of ${src.size} tracks")
+        // With shuffle on, the same play order as before; tracks the filter left out before go at random places after the current one.
+        val order = if (!c.shuffleModeEnabled) null else {
+            val inSrc = src.toSet()
+            val sh = keepOrder(playOrder.map { queueIds[it] }, shuffledSource.filter { it in inSrc }).toMutableList()
+            val from = sh.indexOf(currentId) + 1
+            (src - sh.toSet()).forEach { sh.add((from..sh.size).random(), it) }
+            shuffledSource = sh
+            val indices = (before + after).withIndex().groupBy({ it.value.mediaId }, { if (it.index < before.size) it.index else it.index + 1 })
+                .mapValues { it.value.toMutableList() }.toMutableMap()
+            indices[currentId ?: ""] = mutableListOf(before.size)
+            sh.mapNotNull { indices[it]?.removeFirstOrNull() }.takeIf { it.size == before.size + after.size + 1 }
+        }
         // The current track is not touched, so it doesn't stop.
         c.removeMediaItems(cur + 1, c.mediaItemCount)
         c.removeMediaItems(0, cur)
         c.addMediaItems(0, before)
         c.addMediaItems(after)
+        if (order != null) c.sendCustomCommand(SHUFFLE_ORDER, Bundle().apply {
+            putIntArray("order", order.toIntArray())
+            putInt("ids", (before.map { it.mediaId } + c.currentMediaItem?.mediaId + after.map { it.mediaId }).hashCode())
+        })
         // A new shuffle order with the current track first; added tracks would otherwise go in order.
-        if (c.shuffleModeEnabled) { c.shuffleModeEnabled = false; c.shuffleModeEnabled = true }
+        else if (c.shuffleModeEnabled) { c.shuffleModeEnabled = false; c.shuffleModeEnabled = true }
     }
 
+    /**
+     * [all] with the ids of [kept] in kept's order; every other id stays right before the id that came
+     * after it in [all]. Ids of [kept] that are not in [all] are added.
+     */
+    private fun keepOrder(kept: List<String>, all: List<String>): List<String> {
+        val left = kept.groupingBy { it }.eachCount().toMutableMap()
+        val groups = HashMap<String, ArrayDeque<List<String>>>()
+        var group = mutableListOf<String>()
+        for (id in all) {
+            if ((left[id] ?: 0) > 0) {
+                left[id] = left[id]!! - 1
+                groups.getOrPut(id) { ArrayDeque() }.addLast(group)
+                group = mutableListOf()
+            } else group.add(id)
+        }
+        return kept.flatMap { (groups[it]?.removeFirstOrNull() ?: emptyList()) + it } + group
+    }
+
+    /** With shuffle on, the moved track plays right after the track above it at [to], see [moveInOrder]. */
     fun moveInQueue(from: Int, to: Int) {
+        val id = queueIds.getOrNull(from) ?: return
         queueIds = queueIds.toMutableList().apply { add(to, removeAt(from)) }
+        // The filter keeps the move: the track stays after the track it was put after, in either order.
+        fun moved(ids: List<String>) = ids.toMutableList().apply {
+            remove(id)
+            add(queueIds.getOrNull(to - 1)?.let { indexOf(it) + 1 } ?: 0, id)
+        }
+        library.queueSource = moved(source())
+        if (shuffle && shuffledSource.isNotEmpty()) shuffledSource = moved(shuffledSource)
+        // The current track moves too when the moved one passes it, which with shuffle on is often.
+        currentIndex = when (currentIndex) {
+            from -> to
+            in from + 1..to -> currentIndex - 1
+            in to until from -> currentIndex + 1
+            else -> currentIndex
+        }
+        if (shuffle && playOrder.size == queueIds.size) {
+            playOrder = moveInOrder(playOrder, from, to)
+            movedOrder = queueIds to playOrder
+        }
         controller?.moveMediaItem(from, to)
     }
 
