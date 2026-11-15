@@ -135,6 +135,10 @@ A ready arm64 APK (Android 10+) is in [Releases](../../releases/latest). On firs
 keyID and applicationKey and the bucket name in Settings → Accounts (it opens by itself). The key needs Read and Write access so that likes,
 playlists and history can sync.
 
+After that the app updates itself: on start it checks GitHub Releases, shows the titles of the commits since the
+installed version and installs the newest APK on "Update" (Android asks once to allow installs from B2 Player).
+Settings → About → Check for updates does the same by hand.
+
 Build (JDK 21, Android SDK):
 
 ```bash

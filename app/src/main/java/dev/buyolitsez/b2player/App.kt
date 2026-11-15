@@ -98,6 +98,7 @@ class App : Application() {
     lateinit var lastFm: LastFm
     lateinit var audioFx: AudioFx
     lateinit var lyrics: LyricsRepo
+    lateinit var updates: Updates
     lateinit var cache: SimpleCache
     lateinit var dataSourceFactory: DataSource.Factory
     /** Cache-backed b2:// source, also used to prefetch upcoming tracks. */
@@ -234,6 +235,11 @@ class App : Application() {
         lastFm = LastFm(this)
         audioFx = AudioFx(this)
         lyrics = LyricsRepo(this)
+        updates = Updates(this)
+        // A newer release opens the update dialog once per start of the app.
+        scope.launch(Dispatchers.Main) {
+            runCatching { updates.check() }.onSuccess { updates.dialog = it.isNotEmpty() }.onFailure { AppLog.w("update", "Update check failed", it) }
+        }
         cache = SimpleCache(
             File(cacheDir, "media"), LeastRecentlyUsedCacheEvictor(prefs.cacheGb.value.toLong() shl 30),
             StandaloneDatabaseProvider(this),
