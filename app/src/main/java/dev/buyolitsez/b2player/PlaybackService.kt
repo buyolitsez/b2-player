@@ -57,6 +57,8 @@ class PlaybackService : MediaSessionService() {
     private var lastHistorySync = 0L
     private var listenJob: Job? = null
     private var bufferingSince = 0L
+    /** A [SHUFFLE_ORDER] waiting for the queue it was made for: the controller's edits can arrive after it. */
+    private var pendingOrder: Pair<IntArray, Int>? = null
     private var retriedAuth = false
     private var switchedAt = 0L   // track change not yet audible, for the "Sound after" log line
 
@@ -125,6 +127,7 @@ class PlaybackService : MediaSessionService() {
                 }
             }
             override fun onEvents(p: Player, events: Player.Events) {
+                if (events.contains(Player.EVENT_TIMELINE_CHANGED)) applyOrder(player)
                 if (events.contains(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) updateButtons()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
                     saveQueue(player)
@@ -167,9 +170,13 @@ class PlaybackService : MediaSessionService() {
                 super.addMediaItems(items)
                 placeInShuffle(player, at, items.size, next = false)
             }
+            // A moved track plays right after the track now above it in the queue, see [moveInOrder].
             override fun moveMediaItem(currentIndex: Int, newIndex: Int) {
+                val order = playOrder(player)
                 super.moveMediaItem(currentIndex, newIndex)
-                if (newIndex == player.currentMediaItemIndex + 1) placeInShuffle(player, newIndex, 1, next = true)
+                if (player.shuffleModeEnabled && order.size == player.mediaItemCount) {
+                    player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(moveInOrder(order, currentIndex, newIndex).toIntArray(), System.nanoTime()))
+                }
             }
         }
         session = MediaSession.Builder(this, sessionPlayer)
@@ -178,7 +185,7 @@ class PlaybackService : MediaSessionService() {
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
-                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).build())
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).add(SHUFFLE_ORDER).build())
                         // The platform session (Bluetooth, system UI) gets these commands too: without the timeline Media3
                         // doesn't publish the whole queue there, and PlatformQueue puts in the tracks around the current one.
                         .apply { if (s.isMediaNotificationController(c)) setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon().remove(Player.COMMAND_GET_TIMELINE).build()) }
@@ -188,6 +195,7 @@ class PlaybackService : MediaSessionService() {
                 ): ListenableFuture<SessionResult> {
                     if (command == LIKE) track(player.currentMediaItem)?.let { app.setLiked(listOf(it), !app.library.isLiked(it)) }
                     if (command == SHUFFLE) player.shuffleModeEnabled = !player.shuffleModeEnabled
+                    if (command == SHUFFLE_ORDER) args.getIntArray("order")?.let { pendingOrder = it to args.getInt("ids"); applyOrder(player) }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 override fun onMediaButtonEvent(s: MediaSession, c: MediaSession.ControllerInfo, intent: Intent): Boolean {
@@ -324,16 +332,27 @@ class PlaybackService : MediaSessionService() {
     /** With shuffle on: puts queue items [from, from + count) right after the current track in the play order, or last. */
     private fun placeInShuffle(player: ExoPlayer, from: Int, count: Int, next: Boolean) {
         if (!player.shuffleModeEnabled || count == 0) return
-        val tl = player.currentTimeline
-        val order = generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
-            tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true).takeIf { i -> i != C.INDEX_UNSET }
-        }.toList()
+        val order = playOrder(player)
         if (order.size != player.mediaItemCount) return
         val added = (from until from + count).toList()
         val rest = order.filter { it !in added }
         val at = if (next) rest.indexOf(player.currentMediaItemIndex) + 1 else rest.size
         val newOrder = rest.take(at) + added + rest.drop(at)
         player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(newOrder.toIntArray(), System.nanoTime()))
+    }
+
+    private fun applyOrder(player: ExoPlayer) {
+        val (order, ids) = pendingOrder ?: return
+        if ((0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.hashCode() != ids) return
+        pendingOrder = null
+        if (order.sorted() == (0 until player.mediaItemCount).toList()) player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order, System.nanoTime()))
+    }
+
+    private fun playOrder(player: Player): List<Int> {
+        val tl = player.currentTimeline
+        return generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
+            tl.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true).takeIf { i -> i != C.INDEX_UNSET }
+        }.toList()
     }
 
     /** Debounced: remembers the queue and position so it survives app restarts. */
@@ -441,4 +460,27 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
+}
+
+/**
+ * Sets the shuffle order to the queue indices in "order" (an int array) once the queue is the one whose
+ * media ids have the hash code "ids", e.g. to keep the order across a queue filter change.
+ */
+val SHUFFLE_ORDER = SessionCommand("dev.buyolitsez.b2player.SHUFFLE_ORDER", Bundle.EMPTY)
+
+/**
+ * [order] (queue indices in play order) after the queue item at [from] moves to [to]: the moved item
+ * goes right after the item now above it in the queue, or first when it is now at the top.
+ */
+fun moveInOrder(order: List<Int>, from: Int, to: Int): List<Int> {
+    val rest = order.map { i ->
+        when {
+            i == from -> to
+            from < to && i in from + 1..to -> i - 1
+            from > to && i in to until from -> i + 1
+            else -> i
+        }
+    }.filter { it != to }
+    val at = if (to == 0) 0 else rest.indexOf(to - 1) + 1
+    return rest.take(at) + to + rest.drop(at)
 }
