@@ -136,7 +136,9 @@ keyID and applicationKey and the bucket name in Settings → Accounts (it opens 
 playlists and history can sync.
 
 After that the app updates itself: on start it checks GitHub Releases, shows the titles of the commits since the
-installed version and installs the newest APK on "Update" (Android asks once to allow installs from B2 Player).
+installed version and, on "Update", downloads the newest APK in the background with its progress in a notification
+(Android asks once to allow installs from B2 Player). When it is ready, Install in the app or a tap on the notification
+starts the install.
 Settings → About → Check for updates does the same by hand.
 
 Build (JDK 21, Android SDK):
