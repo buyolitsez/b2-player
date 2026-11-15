@@ -52,8 +52,10 @@ class Prefs(context: Context) {
     val prefetchCount = Num("prefetchCount", 3)
     val restoreQueue = Bool("restoreQueue", true)
     val undoReplace = Bool("undoReplace", true)
-    /** A [QueueFilter] name. */
+    /** A [LikeFilter] name. */
     val queueFilter = Str("queueFilter", "All")
+    /** A [LikeFilter] name for the library, see [Ui.libraryFilter]. */
+    val libraryFilter = Str("libraryFilter", "All")
     /** Stream the light Opus copies of tracks that have them (the button in Now playing). */
     val liteStreaming = Bool("liteStreaming", false)
     // Downloads
