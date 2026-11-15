@@ -62,8 +62,8 @@ fun Cover(ui: Ui, key: String?, size: Dp?, modifier: Modifier = Modifier, shape:
 }
 
 @Composable
-fun SmallIcon(icon: ImageVector, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant, size: Dp = 20.dp, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick), Alignment.Center) {
+fun SmallIcon(icon: ImageVector, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant, size: Dp = 20.dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick), Alignment.Center) {
         Icon(icon, null, Modifier.size(size), tint = tint)
     }
 }
