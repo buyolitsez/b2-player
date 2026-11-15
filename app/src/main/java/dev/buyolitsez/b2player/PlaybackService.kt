@@ -171,6 +171,9 @@ class PlaybackService : MediaSessionService() {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
                         .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).build())
+                        // The platform session (Bluetooth, system UI) gets these commands too: without the timeline it doesn't
+                        // publish the queue, which for "Play all" is the whole library and ran the Bluetooth process out of memory.
+                        .apply { if (s.isMediaNotificationController(c)) setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon().remove(Player.COMMAND_GET_TIMELINE).build()) }
                         .build()
                 override fun onCustomCommand(
                     s: MediaSession, c: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle,
