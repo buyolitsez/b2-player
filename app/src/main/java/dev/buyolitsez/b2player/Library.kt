@@ -127,11 +127,9 @@ class Library(context: Context, private val cache: Cache) {
         val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
         fun arr(k: String) = j?.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
         val remotePlus = arr("added"); val remoteMinus = arr("removed")
-        // Without a base yet (first sync on this version) the local likes win, as before.
-        fun base(name: String, remote: Set<String>) = if (prefs.contains(name)) set(name).toSet() else remote
         fun merge(remote: Set<String>, base: Set<String>, local: Set<String>) = remote + (local - base) - (base - local)
-        val newPlus = merge(remotePlus, base("synced+", remotePlus), plus)
-        val newMinus = merge(remoteMinus, base("synced-", remoteMinus), minus)
+        val newPlus = merge(remotePlus, set("synced+").toSet(), plus)
+        val newMinus = merge(remoteMinus, set("synced-").toSet(), minus)
         if (newPlus != remotePlus || newMinus != remoteMinus) {
             val out = JSONObject().put("version", 1).put("added", JSONArray(newPlus.sorted())).put("removed", JSONArray(newMinus.sorted()))
             b2.upload(LIKES, out.toString(1).toByteArray(), "application/json")
@@ -142,7 +140,7 @@ class Library(context: Context, private val cache: Cache) {
             fun diff(a: Set<String>, b: Set<String>) = (a - b) + (b - a)
             val changed = diff(localPlus, set("liked+")) + diff(localMinus, set("liked-"))
             prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
-                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).remove("likesDirty").apply()
+                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).apply()
             changed
         }
     }
@@ -192,14 +190,27 @@ class Library(context: Context, private val cache: Cache) {
         set(list) = prefs.edit().putString("savedQueues", JSONArray(list.map { queueJson(it) }).toString()).apply()
 
     /** The live queue, so it survives restarts. */
+    /**
+     * The queue is saved every 10 s while playing, but usually only the position changes: that goes to its own
+     * small prefs file, and the ids are rewritten (with the whole "library" file) only when they change.
+     */
     var currentQueue: SavedQueue?
         get() = prefs.getString("currentQueue", null)?.let { queueFrom(JSONObject(it)) }
-        set(q) = prefs.edit().putString("currentQueue", q?.let { queueJson(it).toString() }).apply()
+            ?.let { q -> q.copy(index = position.getInt("index", q.index), positionMs = position.getLong("pos", q.positionMs)) }
+        set(q) {
+            if (q?.ids != savedIds) { prefs.edit().putString("currentQueue", q?.let { queueJson(it).toString() }).apply(); savedIds = q?.ids }
+            if (q != null) position.edit().putInt("index", q.index).putLong("pos", q.positionMs).apply()
+        }
+    private val position = context.getSharedPreferences("queuePosition", Context.MODE_PRIVATE)
+    private var savedIds: List<String>? = null
 
     /** Ids of the queue before the queue filter, see [Ui.setQueueFilter]. */
+    /** Read on every queue edit (each drag step too), so it is kept in memory, and saved in its own prefs file. */
     var queueSource: List<String>
-        get() = prefs.getString("queueSource", "")!!.split('\n').filter { it.isNotEmpty() }
-        set(ids) = prefs.edit().putString("queueSource", ids.joinToString("\n")).apply()
+        get() = source ?: sourcePrefs.getString("ids", null).orEmpty().split('\n').filter { it.isNotEmpty() }.also { source = it }
+        set(ids) { if (ids != source) { source = ids; sourcePrefs.edit().putString("ids", ids.joinToString("\n")).apply() } }
+    private val sourcePrefs = context.getSharedPreferences("queueSource", Context.MODE_PRIVATE)
+    private var source: List<String>? = null
 
     // ---------- media items ----------
 

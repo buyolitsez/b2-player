@@ -218,7 +218,6 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         if (hasFilter) IconButton({ ui.filterOpen = !ui.filterOpen }) { Icon(Icons.Default.Search, "Search in this list") }
                         if (screen is Screen.ArtistView || screen is Screen.GenreView) {
                             IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
-                                ui.version
                                 Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
                             }
                         }

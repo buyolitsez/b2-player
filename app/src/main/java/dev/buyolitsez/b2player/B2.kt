@@ -11,6 +11,8 @@ import java.net.URL
 import java.security.MessageDigest
 
 /** Access to the bucket through the native B2 API: one authorize call, then plain GETs (and small uploads). */
+fun sha1Hex(bytes: ByteArray): String = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+
 class B2(private val context: Context) {
     data class Settings(val keyId: String, val appKey: String, val bucket: String) {
         val complete get() = keyId.isNotBlank() && appKey.isNotBlank() && bucket.isNotBlank()
@@ -121,7 +123,7 @@ class B2(private val context: Context) {
         c.setRequestProperty("Authorization", up.getString("authorizationToken"))
         c.setRequestProperty("X-Bz-File-Name", Uri.encode(key, "/"))
         c.setRequestProperty("Content-Type", contentType)
-        c.setRequestProperty("X-Bz-Content-Sha1", MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) })
+        c.setRequestProperty("X-Bz-Content-Sha1", sha1Hex(bytes))
         c.setFixedLengthStreamingMode(bytes.size)
         c.connectTimeout = 15000; c.readTimeout = 30000
         c.outputStream.use { it.write(bytes) }

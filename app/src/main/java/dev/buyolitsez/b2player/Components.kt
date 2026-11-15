@@ -281,7 +281,6 @@ fun TrackSheet(ui: Ui) {
                 tile("Add to playlist", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = listOf(t) }
             }
             req.extra?.invoke(this, close)
-            MenuItem(if (ui.app.stopAfterId.value == t.id) "Don't stop after this" else "Stop after this track", Icons.Default.StopCircle, close) { ui.stopAfter(t) }
             if (ui.downloaded(t)) MenuItem("Remove download", Icons.Default.Delete, close) { ui.deleteDownloads(listOf(t)) }
             else MenuItem("Download", Icons.Default.Download, close) { ui.download(t.id, t.title, listOf(t)) }
             // Hide the links to the screen that is already open.
