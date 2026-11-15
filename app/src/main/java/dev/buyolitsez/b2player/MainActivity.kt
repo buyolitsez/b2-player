@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.compose.ui.graphics.Color as UiColor
 import androidx.media3.common.util.UnstableApi
@@ -117,6 +118,12 @@ class MainActivity : ComponentActivity() {
             val c = future.get()
             c.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) = ui.sync(player)
+                // Otherwise a track that can't load, e.g. streamed without a network, just stays paused.
+                override fun onPlayerError(error: PlaybackException) {
+                    val offline = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+                    ui.toast(if (offline) "Can't play: no network, and the track isn't downloaded" else "Can't play: ${error.errorCodeName}")
+                }
             })
             ui.sync(c)
             ui.controller = c
