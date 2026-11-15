@@ -62,7 +62,8 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
                 Text(t.artist, style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = Color(0xFFC9C9C9),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { ui.open(Screen.ArtistView(t.album.artist), Tab.Library) })
             }
-            SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, if (ui.liked(t)) accent else white, 28.dp) { ui.toggleLike(t) }
+            // Shifted right so the heart lines up with the cover's edge, not the button's.
+            SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, white, 24.dp, Modifier.offset(x = 10.dp)) { ui.toggleLike(t) }
         }
         // The line is always there, so the controls don't jump when a timer is set.
         val label = sleepLabel(ui)
