@@ -39,7 +39,8 @@ private fun query(): Map<String, String> = runCatching { exec("cmus-remote", "-Q
     else line.substringBefore(' ') to line.substringAfter(' ', "")
 }
 
-private fun bucketFile(name: String): String? = runCatching { exec("rclone", "cat", "$REMOTE/$name") }.getOrNull()?.takeIf { it.isNotBlank() }
+// rclone cat prints nothing for a missing file; a failed read throws instead of passing for an empty state
+private fun bucketFile(name: String): String? = exec("rclone", "cat", "$REMOTE/$name").takeIf { it.isNotBlank() }
 
 private fun upload(name: String, data: String) { exec("rclone", "rcat", "$REMOTE/$name", input = data.toByteArray()) }
 
