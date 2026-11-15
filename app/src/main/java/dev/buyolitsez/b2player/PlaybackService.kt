@@ -311,11 +311,13 @@ class PlaybackService : MediaSessionService() {
         val tracks = q.ids.mapNotNull { catalog.byId[it] }
         if (tracks.isEmpty()) return@launch
         val items = tracks.map { app.library.mediaItem(it) }
+        // tracks deleted since are dropped, so the saved index may point elsewhere: find the current one by id
+        val current = tracks.indexOfFirst { it.id == q.ids.getOrNull(q.index) }
         withContext(Dispatchers.Main) {
             if (player.mediaItemCount > 0) return@withContext
             // Not prepared here: the service is recreated on every app start, and preparing would load
             // the track (and its neighbours) each time. Play prepares it (MediaSession does that).
-            player.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
+            player.setMediaItems(items, current.coerceAtLeast(0), if (current >= 0) q.positionMs else 0)
             shuffleFromCurrent(player)
         }
     }

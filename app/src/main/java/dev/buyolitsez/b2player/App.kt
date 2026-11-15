@@ -187,11 +187,12 @@ class App : Application() {
         json.put("albums", kept)
         val hide = paths.toMutableSet()
         for (d in dirs) if (left.none { it.startsWith("$d/") }) hide += b2.list("$prefix$d/").map { it.removePrefix(prefix) }
-        hide.forEach { b2.hide(prefix + it) }
         val bytes = java.io.ByteArrayOutputStream().also { out ->
             java.util.zip.GZIPOutputStream(out).use { it.write(json.toString().toByteArray()) }
         }.toByteArray()
+        // the catalog goes first: hidden files that it still lists would not play
         b2.upload("catalog.json.gz", bytes, "application/gzip")
+        hide.forEach { b2.hide(prefix + it) }
         val listed = b2.fetchOrNull("state/deleted.tsv")?.decodeToString().orEmpty()
         b2.upload("state/deleted.tsv", (listed + hide.joinToString("") { "$it\n" }).toByteArray(), "text/tab-separated-values")
         library.catalogFile.writeBytes(bytes)

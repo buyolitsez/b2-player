@@ -82,12 +82,13 @@ class History(context: Context) {
     @Synchronized
     fun clear() { file.delete(); cache = emptyList() }
 
-    @Synchronized
+    /** The network calls run outside the lock, so that [all] on the main thread never waits for them. */
     fun sync(b2: B2) {
-        val local = all()
         val remote = b2.fetchOrNull(KEY)?.decodeToString()?.let { parse(it) } ?: emptyList()
-        val merged = (local + remote).distinct().sortedBy { it.time }
-        if (merged.size != local.size) { file.writeText(format(merged)); cache = merged }
+        val merged = synchronized(this) {
+            val local = all()
+            (local + remote).distinct().sortedBy { it.time }.also { if (it.size != local.size) { file.writeText(format(it)); cache = it } }
+        }
         if (merged.size != remote.size) b2.upload(KEY, format(merged).toByteArray(), "text/tab-separated-values")
     }
 
