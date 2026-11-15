@@ -395,6 +395,14 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     // ---------- likes and downloads ----------
 
+    /** Lite streaming: light Opus copies instead of the originals, for a slow network. The queue switches at once. */
+    fun toggleLite() {
+        val on = !prefs.liteStreaming.value
+        prefs.liteStreaming.set(on)
+        controller?.sendCustomCommand(LITE, Bundle.EMPTY)
+        toast(if (on) "Lite streaming: Opus 128 kbps" else "Original quality")
+    }
+
     fun toggleLike(t: Track) = setLiked(listOf(t), !library.isLiked(t))
 
     fun setLiked(tracks: List<Track>, liked: Boolean) = app.setLiked(tracks, liked)

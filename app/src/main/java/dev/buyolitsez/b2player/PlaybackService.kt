@@ -185,7 +185,7 @@ class PlaybackService : MediaSessionService() {
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
-                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).add(SHUFFLE_ORDER).build())
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(LIKE).add(SHUFFLE).add(SHUFFLE_ORDER).add(LITE).build())
                         // The platform session (Bluetooth, system UI) gets these commands too: without the timeline Media3
                         // doesn't publish the whole queue there, and PlatformQueue puts in the tracks around the current one.
                         .apply { if (s.isMediaNotificationController(c)) setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon().remove(Player.COMMAND_GET_TIMELINE).build()) }
@@ -195,6 +195,7 @@ class PlaybackService : MediaSessionService() {
                 ): ListenableFuture<SessionResult> {
                     if (command == LIKE) track(player.currentMediaItem)?.let { app.setLiked(listOf(it), !app.library.isLiked(it)) }
                     if (command == SHUFFLE) player.shuffleModeEnabled = !player.shuffleModeEnabled
+                    if (command == LITE) switchFiles(player)
                     if (command == SHUFFLE_ORDER) args.getIntArray("order")?.let { pendingOrder = it to args.getInt("ids"); applyOrder(player) }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
@@ -350,6 +351,30 @@ class PlaybackService : MediaSessionService() {
         if (order.sorted() == (0 until player.mediaItemCount).toList()) player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order, System.nanoTime()))
     }
 
+    /**
+     * Lite streaming was turned on or off: the queue's tracks switch to the other files. The current
+     * track is reloaded at the same place only if its file changes; the play order stays.
+     */
+    private fun switchFiles(player: ExoPlayer) {
+        val n = player.mediaItemCount
+        val old = (0 until n).map { player.getMediaItemAt(it) }
+        val items = old.map { item -> track(item)?.let { app.library.mediaItem(it) } ?: item }
+        val changed = items.indices.filter { items[it].localConfiguration?.uri != old[it].localConfiguration?.uri }
+        if (changed.isEmpty()) return
+        val cur = player.currentMediaItemIndex
+        val pos = player.currentPosition
+        val order = playOrder(player)
+        if (cur in changed) {
+            player.replaceMediaItems(0, n, items)
+            player.seekTo(cur, pos)
+        } else {
+            player.replaceMediaItems(cur + 1, n, items.subList(cur + 1, n))
+            player.replaceMediaItems(0, cur, items.subList(0, cur))
+        }
+        if (order.size == n) player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order.toIntArray(), System.nanoTime()))
+        AppLog.i("player", "Lite ${app.prefs.liteStreaming.value}: ${changed.size} tracks switched")
+    }
+
     private fun playOrder(player: Player): List<Int> {
         val tl = player.currentTimeline
         return generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {
@@ -408,12 +433,13 @@ class PlaybackService : MediaSessionService() {
     private fun prefetchSpec(uri: android.net.Uri, t: Track?): DataSpec {
         val start = t?.start ?: return DataSpec(uri)
         val total = t.album.tracks.filter { it.path == t.path }.maxOf { (it.start ?: 0.0) + it.duration }
-        if (total <= 0 || t.size <= 0) return DataSpec(uri)
+        val size = if (Library.isLite(uri)) t.liteSize else t.size
+        if (total <= 0 || size <= 0) return DataSpec(uri)
         val margin = 1L shl 20
-        val from = (t.size * (start / total)).toLong() - margin
-        val length = (t.size * (t.duration / total)).toLong() + 2 * margin
+        val from = (size * (start / total)).toLong() - margin
+        val length = (size * (t.duration / total)).toLong() + 2 * margin
         val pos = from.coerceAtLeast(0)
-        return DataSpec.Builder().setUri(uri).setPosition(pos).setLength(minOf(length, t.size - pos)).build()
+        return DataSpec.Builder().setUri(uri).setPosition(pos).setLength(minOf(length, size - pos)).build()
     }
 
     private companion object {
@@ -469,6 +495,9 @@ class PlaybackService : MediaSessionService() {
  * media ids have the hash code "ids", e.g. to keep the order across a queue filter change.
  */
 val SHUFFLE_ORDER = SessionCommand("dev.buyolitsez.b2player.SHUFFLE_ORDER", Bundle.EMPTY)
+
+/** Lite streaming was turned on or off, see [Prefs.liteStreaming]. */
+val LITE = SessionCommand("dev.buyolitsez.b2player.LITE", Bundle.EMPTY)
 
 /**
  * [order] (queue indices in play order) after the queue item at [from] moves to [to]: the moved item

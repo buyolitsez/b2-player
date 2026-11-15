@@ -4,6 +4,8 @@ data class Track(
     val path: String, val title: String, val artist: String, val album: Album,
     val number: Int?, val disc: Int?, val duration: Double, val start: Double?, val size: Long,
     val likedInCatalog: Boolean, val hasLyrics: Boolean = false,
+    /** Size of the light Opus copy of the file (lite/<path>.opus in the bucket), 0 when there is none. */
+    val liteSize: Long = 0,
 ) {
     /** Unique per track; CUE tracks share a file, so the start offset is part of the id. */
     val id get() = if (start == null) path else "$path#$start"

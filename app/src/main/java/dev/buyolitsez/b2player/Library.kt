@@ -37,7 +37,7 @@ private fun android.util.JsonReader.int(): Int? =
 
 private class RawTrack(
     val path: String, val title: String, val artist: String?, val number: Int?, val disc: Int?,
-    val duration: Double, val start: Double?, val size: Long, val liked: Boolean, val lyrics: Boolean,
+    val duration: Double, val start: Double?, val size: Long, val liked: Boolean, val lyrics: Boolean, val lite: Long,
 )
 
 private fun readAlbum(r: android.util.JsonReader): Album {
@@ -57,7 +57,7 @@ private fun readAlbum(r: android.util.JsonReader): Album {
             r.beginArray()
             while (r.hasNext()) {
                 var path = ""; var tTitle = ""; var tArtist: String? = null; var number: Int? = null; var disc: Int? = null
-                var duration = 0.0; var start: Double? = null; var size = 0L; var liked = false; var ly = false
+                var duration = 0.0; var start: Double? = null; var size = 0L; var liked = false; var ly = false; var lite = 0L
                 r.beginObject()
                 while (r.hasNext()) when (r.nextName()) {
                     "path" -> path = r.nextString()
@@ -70,10 +70,11 @@ private fun readAlbum(r: android.util.JsonReader): Album {
                     "size" -> size = r.nextLong()
                     "liked" -> liked = r.nextBoolean()
                     "ly" -> ly = r.nextBoolean()
+                    "lite" -> lite = r.nextLong()
                     else -> r.skipValue()
                 }
                 r.endObject()
-                raw.add(RawTrack(path, tTitle, tArtist, number, disc, duration, start, size, liked, ly))
+                raw.add(RawTrack(path, tTitle, tArtist, number, disc, duration, start, size, liked, ly, lite))
             }
             r.endArray()
         }
@@ -82,7 +83,7 @@ private fun readAlbum(r: android.util.JsonReader): Album {
     r.endObject()
     val album = Album(id, dir, title, artist, year, cover, added, genre)
     album.tracks = raw.map { t ->
-        Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics)
+        Track(t.path, t.title, t.artist ?: artist, album, t.number, t.disc, t.duration, t.start, t.size, t.liked, t.lyrics, t.lite)
     }
     return album
 }
@@ -91,7 +92,7 @@ data class SavedQueue(val name: String, val ids: List<String>, val index: Int, v
 
 /** Likes (synced to state/likes.json in the bucket), offline files, cache state and saved queues. */
 @UnstableApi
-class Library(context: Context, private val cache: Cache) {
+class Library(context: Context, private val cache: Cache, private val settings: Prefs) {
     private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
     val offlineDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "offline")
     val catalogFile = File(context.filesDir, "catalog.json.gz")
@@ -163,7 +164,8 @@ class Library(context: Context, private val cache: Cache) {
      * replaced (tags rewritten by apply-tags.py), and old cached bytes must not mix with new ones.
      */
     fun dropStaleCache(c: Catalog) {
-        val sizes = c.tracks.associate { uriFor(it.path).toString() to it.size }
+        val sizes = c.tracks.associate { uriFor(it.path).toString() to it.size } +
+            c.tracks.filter { it.liteSize > 0 }.associate { liteUriFor(it.path).toString() to it.liteSize }
         for (key in cache.keys.toList()) {
             val cached = androidx.media3.datasource.cache.ContentMetadata.getContentLength(cache.getContentMetadata(key))
             val size = sizes[key] ?: continue
@@ -214,9 +216,17 @@ class Library(context: Context, private val cache: Cache) {
 
     // ---------- media items ----------
 
-    fun mediaItem(t: Track): MediaItem {
+    /**
+     * Plays the download if there is one; with Lite streaming on, the light copy, unless the
+     * original is cached whole; otherwise the original.
+     */
+    fun mediaItem(t: Track, lite: Boolean = settings.liteStreaming.value): MediaItem {
         val local = offlineFile(t.path)
-        val uri = if (local.exists()) Uri.fromFile(local) else uriFor(t.path)
+        val uri = when {
+            local.exists() -> Uri.fromFile(local)
+            lite && t.liteSize > 0 && !isCached(t) -> liteUriFor(t.path)
+            else -> uriFor(t.path)
+        }
         val b = MediaItem.Builder().setMediaId(t.id).setUri(uri)
             .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
             .setMediaMetadata(
@@ -239,6 +249,10 @@ class Library(context: Context, private val cache: Cache) {
     companion object {
         const val MUSIC = "music/"
         const val LIKES = "state/likes.json"
+        /** Light Opus copies made by tools/make_lite.py. */
+        const val LITE = "lite/"
         fun uriFor(path: String): Uri = Uri.parse("b2://bucket/" + Uri.encode(MUSIC + path, "/"))
+        fun liteUriFor(path: String): Uri = Uri.parse("b2://bucket/" + Uri.encode("$LITE$path.opus", "/"))
+        fun isLite(uri: Uri) = uri.path?.startsWith("/$LITE") == true
     }
 }
