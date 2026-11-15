@@ -27,11 +27,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val app = applicationContext as App
         val paths = inputData.getStringArray("paths").orEmpty().distinct()
         val title = inputData.getString("title").orEmpty()
+        val first = inputData.getInt("first", 0); val all = inputData.getInt("all", paths.size)
         var failed = 0
         _progress.update { m -> m + paths.filter { it !in m && !app.library.offlineFile(it).exists() }.associateWith { 0f } }
         try {
             paths.forEachIndexed { i, p ->
-                setProgress(workDataOf("title" to title, "done" to i, "total" to paths.size))
+                setProgress(workDataOf("title" to title, "done" to first + i, "total" to all))
                 val dst = app.library.offlineFile(p)
                 if (!dst.exists()) {
                     try {
@@ -71,15 +72,27 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         /** [wifiOnly] is for automatic downloads (liked tracks); manual ones use any network. */
         fun enqueue(context: Context, name: String, title: String, tracks: List<Track>, wifiOnly: Boolean = false) {
-            val req = OneTimeWorkRequestBuilder<DownloadWorker>()
-                .setInputData(workDataOf("paths" to tracks.map { it.path }.distinct().toTypedArray(), "title" to title))
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
-                )
-                .addTag(TAG)
-                .build()
-            WorkManager.getInstance(context).enqueueUniqueWork("dl:$name", ExistingWorkPolicy.KEEP, req)
+            // Work input is limited to 10 KB, so a long list goes as a chain of parts that run one after another.
+            val paths = tracks.map { it.path }.distinct()
+            val parts = mutableListOf(mutableListOf<String>()); var bytes = 0
+            for (p in paths) {
+                val n = p.toByteArray().size + 8
+                if (bytes + n > 8000 && parts.last().isNotEmpty()) { parts += mutableListOf<String>(); bytes = 0 }
+                parts.last() += p; bytes += n
+            }
+            var first = 0
+            val reqs = parts.map { part ->
+                OneTimeWorkRequestBuilder<DownloadWorker>()
+                    .setInputData(workDataOf("paths" to part.toTypedArray(), "title" to title, "first" to first, "all" to paths.size))
+                    .setConstraints(
+                        Constraints.Builder()
+                            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
+                    )
+                    .addTag(TAG)
+                    .build()
+                    .also { first += part.size }
+            }
+            reqs.drop(1).fold(WorkManager.getInstance(context).beginUniqueWork("dl:$name", ExistingWorkPolicy.KEEP, reqs[0])) { c, r -> c.then(r) }.enqueue()
             // The buttons turn into rings right away, also while the work waits for a network.
             _progress.update { m -> m + tracks.map { it.path }.filter { it !in m }.associateWith { 0f } }
         }
