@@ -52,7 +52,6 @@ dependencies {
     implementation("androidx.palette:palette:1.0.0")
     implementation("dev.chrisbanes.haze:haze-android:1.7.0") // blur behind the mini player and tabs
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation(platform("androidx.compose:compose-bom:2025.12.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")

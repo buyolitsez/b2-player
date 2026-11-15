@@ -127,11 +127,9 @@ class Library(context: Context, private val cache: Cache) {
         val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
         fun arr(k: String) = j?.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
         val remotePlus = arr("added"); val remoteMinus = arr("removed")
-        // Without a base yet (first sync on this version) the local likes win, as before.
-        fun base(name: String, remote: Set<String>) = if (prefs.contains(name)) set(name).toSet() else remote
         fun merge(remote: Set<String>, base: Set<String>, local: Set<String>) = remote + (local - base) - (base - local)
-        val newPlus = merge(remotePlus, base("synced+", remotePlus), plus)
-        val newMinus = merge(remoteMinus, base("synced-", remoteMinus), minus)
+        val newPlus = merge(remotePlus, set("synced+").toSet(), plus)
+        val newMinus = merge(remoteMinus, set("synced-").toSet(), minus)
         if (newPlus != remotePlus || newMinus != remoteMinus) {
             val out = JSONObject().put("version", 1).put("added", JSONArray(newPlus.sorted())).put("removed", JSONArray(newMinus.sorted()))
             b2.upload(LIKES, out.toString(1).toByteArray(), "application/json")
@@ -142,7 +140,7 @@ class Library(context: Context, private val cache: Cache) {
             fun diff(a: Set<String>, b: Set<String>) = (a - b) + (b - a)
             val changed = diff(localPlus, set("liked+")) + diff(localMinus, set("liked-"))
             prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
-                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).remove("likesDirty").apply()
+                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).apply()
             changed
         }
     }
