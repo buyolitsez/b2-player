@@ -34,8 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
@@ -319,8 +323,15 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             else -> when (ui.tab) {
                                 Tab.Library -> Column {
                                     Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        val chips = rememberScrollState()
                                         Row(
-                                            Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                                            // Chips that don't fit fade out at the edge instead of being cut off by the buttons.
+                                            Modifier.weight(1f).graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
+                                                drawContent()
+                                                val w = 40.dp.toPx()
+                                                if (chips.canScrollForward) drawRect(Brush.horizontalGradient(listOf(UiColor.Black, UiColor.Transparent), size.width - w, size.width), blendMode = BlendMode.DstIn)
+                                                if (chips.canScrollBackward) drawRect(Brush.horizontalGradient(listOf(UiColor.Transparent, UiColor.Black), 0f, w), blendMode = BlendMode.DstIn)
+                                            }.horizontalScroll(chips).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
                                         // The whole library, in order or shuffled.
