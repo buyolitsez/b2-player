@@ -192,9 +192,19 @@ class Library(context: Context, private val cache: Cache) {
         set(list) = prefs.edit().putString("savedQueues", JSONArray(list.map { queueJson(it) }).toString()).apply()
 
     /** The live queue, so it survives restarts. */
+    /**
+     * The queue is saved every 10 s while playing, but usually only the position changes: that goes to its own
+     * small prefs file, and the ids are rewritten (with the whole "library" file) only when they change.
+     */
     var currentQueue: SavedQueue?
         get() = prefs.getString("currentQueue", null)?.let { queueFrom(JSONObject(it)) }
-        set(q) = prefs.edit().putString("currentQueue", q?.let { queueJson(it).toString() }).apply()
+            ?.let { q -> q.copy(index = position.getInt("index", q.index), positionMs = position.getLong("pos", q.positionMs)) }
+        set(q) {
+            if (q?.ids != savedIds) { prefs.edit().putString("currentQueue", q?.let { queueJson(it).toString() }).apply(); savedIds = q?.ids }
+            if (q != null) position.edit().putInt("index", q.index).putLong("pos", q.positionMs).apply()
+        }
+    private val position = context.getSharedPreferences("queuePosition", Context.MODE_PRIVATE)
+    private var savedIds: List<String>? = null
 
     /** Ids of the queue before the queue filter, see [Ui.setQueueFilter]. */
     var queueSource: List<String>
