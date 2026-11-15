@@ -207,9 +207,12 @@ class Library(context: Context, private val cache: Cache) {
     private var savedIds: List<String>? = null
 
     /** Ids of the queue before the queue filter, see [Ui.setQueueFilter]. */
+    /** Read on every queue edit (each drag step too), so it is kept in memory, and saved in its own prefs file. */
     var queueSource: List<String>
-        get() = prefs.getString("queueSource", "")!!.split('\n').filter { it.isNotEmpty() }
-        set(ids) = prefs.edit().putString("queueSource", ids.joinToString("\n")).apply()
+        get() = source ?: sourcePrefs.getString("ids", null).orEmpty().split('\n').filter { it.isNotEmpty() }.also { source = it }
+        set(ids) { if (ids != source) { source = ids; sourcePrefs.edit().putString("ids", ids.joinToString("\n")).apply() } }
+    private val sourcePrefs = context.getSharedPreferences("queueSource", Context.MODE_PRIVATE)
+    private var source: List<String>? = null
 
     // ---------- media items ----------
 
