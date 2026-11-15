@@ -30,6 +30,8 @@ interface AssistantHost {
     fun play(tracks: List<Track>, shuffled: Boolean)
     fun playNext(tracks: List<Track>)
     fun addToEnd(tracks: List<Track>)
+    /** Brings back the queue from before the last replacement; false if there is none. */
+    fun restoreQueue(): Boolean
     fun isLiked(t: Track): Boolean
     fun setLiked(tracks: List<Track>, liked: Boolean)
     val playlists: List<Playlist>
@@ -42,8 +44,8 @@ interface AssistantHost {
 
     /** A reply of Claude, or an error to show in the chat. */
     fun reply(text: String, error: Boolean = false)
-    /** Shows a change to likes or playlists and waits for the user to apply or cancel it. */
-    suspend fun confirm(change: AssistantTools.Change): Boolean
+    /** Shows a change and waits for the user to pick one of its actions, or null to cancel it. */
+    suspend fun confirm(change: AssistantTools.Change): AssistantTools.Action?
     fun log(message: String, error: Throwable? = null)
 }
 
@@ -129,7 +131,7 @@ class AssistantChat(private val host: AssistantHost) {
         // Searches go over 18k tracks: off the main thread. The rest touches the player.
         val r = if (name.startsWith("search") || name == "listening_stats") withContext(Dispatchers.Default) { t.run(name, input) } else t.run(name, input)
         if (r !is AssistantTools.Change) return r as String
-        return if (host.confirm(r)) r.apply() else "The user cancelled this change"
+        return host.confirm(r)?.run?.invoke() ?: "The user cancelled this change"
     }
 
     companion object {
@@ -167,8 +169,9 @@ class AssistantChat(private val host: AssistantHost) {
               know about the songs and artists, and play your choice. Say in one line what you put on. Use liked_only only
               when the user asks for liked music.
             - Likes, ratings and playlists are the user's data: set_liked, set_rating, create_playlist and add_to_playlist
-              show the user the change, and the tool result says whether they applied or cancelled it. Don't ask for
-              confirmation in text as well.
+              show the user the change, and the tool result says whether they applied or cancelled it. play with mode
+              replace shows what you picked with a Play button the same way. Don't ask for confirmation in text as well.
+            - "Верни прошлую очередь" means restore_queue: the player keeps the queue from before the last replacement.
             - Album ratings (1 to 10) are the user's scores from their listening diary, which goes back years before the
               listening history: a rated album has been heard even with no plays in the history. Weigh ratings when
               recommending, and don't offer a rated album as new to the user. When the user gives an album a score
