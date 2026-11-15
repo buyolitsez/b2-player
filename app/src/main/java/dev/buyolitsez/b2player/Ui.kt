@@ -221,6 +221,18 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         c.prepare()
     }
 
+    /** The queue before the last replacement and whether it was shuffled, for [restoreReplaced]. */
+    private var replaced: Pair<SavedQueue, Boolean>? = null
+
+    /** Brings back the queue from before the last replacement; the current one takes its place, so a second call undoes it. */
+    fun restoreReplaced(): Boolean {
+        val c = controller ?: return false
+        val (q, shuffle) = replaced ?: return false
+        replaced = snapshot()?.let { it to c.shuffleModeEnabled }
+        restore(q, play = true, shuffle = shuffle)
+        return true
+    }
+
     /**
      * Replaces the queue; the old one can be brought back from the snackbar. [index] is the tapped
      * track; without it the queue starts at the top. A new queue drops the queue filter.
@@ -242,8 +254,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         library.queueSource = tracks.map { it.id }
         c.setMediaItems(items, if (shuffled) tracks.indices.random() else start, if (shuffled) 0 else positionMs)
         c.prepare(); c.play()
-        if (prefs.undoReplace.value && before != null && before.ids != tracks.map { it.id }) {
-            scope.launch {
+        if (before != null && before.ids != tracks.map { it.id }) {
+            replaced = before to wasShuffled
+            if (prefs.undoReplace.value) scope.launch {
                 snackbar.currentSnackbarData?.dismiss()
                 if (snackbar.showSnackbar("Queue replaced", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                     restore(before, play = true, shuffle = wasShuffled)

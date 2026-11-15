@@ -101,16 +101,25 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
     private fun result(total: Int, lines: List<String>) =
         if (total == 0) "Nothing found" else "$total found" + (if (lines.size < total) ", showing ${lines.size}" else "") + "\n" + lines.joinToString("\n")
 
-    fun play(a: JsonNode): String {
+    /** Adding to the queue happens at once; replacing it waits for the user, who can also play the tracks next. */
+    fun play(a: JsonNode): Any {
         val tracks = resolve(a.path("items"))
         if (tracks.isEmpty()) return "No such tracks or albums"
         when (a.path("mode").asText("replace")) {
-            "next" -> host.playNext(tracks)
-            "end" -> host.addToEnd(tracks)
-            else -> host.play(tracks, shuffled = a.path("shuffle").asBoolean())
+            "next" -> { host.playNext(tracks); return "OK, ${tracks.size} tracks play next" }
+            "end" -> { host.addToEnd(tracks); return "OK, ${tracks.size} tracks added to the end" }
         }
-        return "OK, ${tracks.size} tracks"
+        val shuffle = a.path("shuffle").asBoolean()
+        val album = tracks.first().album.takeIf { al -> tracks.all { it.album === al } }
+        val what = album?.let { "${it.artist} — ${it.title} · " }.orEmpty() + count(tracks.size)
+        return Change((if (shuffle) "Shuffle " else "Play ") + what, tracks, listOf(
+            Action("Play", "Playing") { host.play(tracks, shuffle); "Playing: $what" },
+            Action("Play next", "Playing next") { host.playNext(tracks); "The user chose to play them after the current track instead: $what" },
+        ))
     }
+
+    fun restoreQueue(): String =
+        if (host.restoreQueue()) "Brought back the previous queue" else "There is no previous queue to bring back"
 
     fun queue(): String {
         val ids = host.queueIds
@@ -123,8 +132,13 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
     fun playlists(): String =
         host.playlists.joinToString("\n") { "${it.name} | ${it.trackIds.size} tracks" }.ifEmpty { "No playlists" }
 
-    /** A change to likes or playlists, shown to the user before it is applied. */
-    class Change(val title: String, val tracks: List<Track>, val apply: () -> String)
+    /** A change shown to the user before it is applied: they pick one of [actions] or cancel. */
+    class Change(val title: String, val tracks: List<Track>, val actions: List<Action>) {
+        constructor(title: String, tracks: List<Track>, apply: () -> String) : this(title, tracks, listOf(Action("Apply", "Applied", apply)))
+    }
+
+    /** A button of a [Change]: [done] is shown once it is tapped, [run] returns the tool result. */
+    class Action(val label: String, val done: String, val run: () -> String)
 
     fun setLiked(a: JsonNode): Any {
         val liked = a.path("liked").asBoolean(true)
@@ -181,6 +195,7 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         "search_albums" -> searchAlbums(input)
         "play" -> play(input)
         "get_queue" -> queue()
+        "restore_queue" -> restoreQueue()
         "list_playlists" -> playlists()
         "set_liked" -> setLiked(input)
         "create_playlist" -> createPlaylist(input)
@@ -212,11 +227,13 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
                     "min_rating": {"type": "number", "description": "Only albums rated at least this"},
                     "sort": {"type": "string", "enum": ["library", "rating"], "description": "rating: highest rated first"},
                     "limit": {"type": "integer", "description": "Default 100, max 400"}}}"""),
-            Triple("play", "Play tracks or albums. mode replace (default) replaces the queue and starts playing; next inserts after the current track; end appends to the queue.",
+            Triple("play", "Play tracks or albums. mode replace (default) replaces the queue: the user sees what you picked and taps Play, Play next or Cancel, and the result says which; next inserts after the current track and end appends to the queue, both at once.",
                 """{"type": "object", "properties": {$ITEMS,
                     "mode": {"type": "string", "enum": ["replace", "next", "end"]},
                     "shuffle": {"type": "boolean", "description": "Only with replace"}}, "required": ["items"]}"""),
             Triple("get_queue", "The current queue from the playing track on (up to 50).", """{"type": "object", "properties": {}}"""),
+            Triple("restore_queue", "Bring back the queue that was playing before the last time it was replaced, at the same track and position.",
+                """{"type": "object", "properties": {}}"""),
             Triple("list_playlists", "The user's playlists with track counts.", """{"type": "object", "properties": {}}"""),
             Triple("set_liked", "Like or unlike tracks. The user sees the list and confirms or cancels; the result says which.",
                 """{"type": "object", "properties": {$ITEMS, "liked": {"type": "boolean"}}, "required": ["items", "liked"]}"""),

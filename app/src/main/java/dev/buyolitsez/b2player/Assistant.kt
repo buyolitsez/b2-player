@@ -52,11 +52,12 @@ sealed interface ChatEntry {
     data class Reply(val text: String, val error: Boolean = false) : ChatEntry
     /** How long the assistant took to answer, without the time spent waiting for Apply or Cancel. */
     data class Took(val ms: Long) : ChatEntry
-    /** A change to likes or playlists waiting for Apply or Cancel. */
+    /** A change waiting for one of its actions or Cancel. */
     class Confirm(val change: AssistantTools.Change) : ChatEntry {
-        val decision = CompletableDeferred<Boolean>()
-        var answered by mutableStateOf<Boolean?>(null)
-        fun answer(ok: Boolean) { if (answered == null) { answered = ok; decision.complete(ok) } }
+        val decision = CompletableDeferred<AssistantTools.Action?>()
+        var answered by mutableStateOf(false)
+        var chosen by mutableStateOf<AssistantTools.Action?>(null)
+        fun answer(action: AssistantTools.Action?) { if (!answered) { answered = true; chosen = action; decision.complete(action) } }
     }
 }
 
@@ -88,6 +89,7 @@ class Assistant(private val ui: Ui) {
         override fun play(tracks: List<Track>, shuffled: Boolean) { ui.play(tracks, shuffled = shuffled) }
         override fun playNext(tracks: List<Track>) = ui.playNext(tracks)
         override fun addToEnd(tracks: List<Track>) = ui.addToEnd(tracks)
+        override fun restoreQueue() = ui.restoreReplaced()
         override fun isLiked(t: Track) = ui.library.isLiked(t)
         override fun setLiked(tracks: List<Track>, liked: Boolean) = ui.setLiked(tracks, liked)
         override val playlists get() = ui.app.playlists.all
@@ -97,7 +99,7 @@ class Assistant(private val ui: Ui) {
         override fun rating(a: Album) = ui.app.ratings.get(a.id)
         override fun setRating(a: Album, rating: Int) = ui.setRating(a, rating)
         override fun reply(text: String, error: Boolean) { entries.add(ChatEntry.Reply(text, error)) }
-        override suspend fun confirm(change: AssistantTools.Change): Boolean {
+        override suspend fun confirm(change: AssistantTools.Change): AssistantTools.Action? {
             val confirm = ChatEntry.Confirm(change)
             entries.add(confirm)
             val asked = SystemClock.elapsedRealtime()
@@ -118,7 +120,11 @@ class Assistant(private val ui: Ui) {
     fun send(text: String) {
         val cat = ui.app.catalog.value
         if (text.isBlank() || cat == null) return
-        if (busy) { queued.add(text.trim()); return }
+        if (busy) {
+            // A new message instead of tapping the card means "not this": it is cancelled and the message goes next.
+            entries.filterIsInstance<ChatEntry.Confirm>().forEach { it.answer(null) }
+            queued.add(text.trim()); return
+        }
         entries.add(ChatEntry.User(text.trim()))
         busy = true
         val started = SystemClock.elapsedRealtime()
@@ -129,7 +135,7 @@ class Assistant(private val ui: Ui) {
                 chat.send(cat, text.trim())
                 entries.add(ChatEntry.Took(SystemClock.elapsedRealtime() - started - confirmWait))
             } catch (e: CancellationException) {
-                entries.filterIsInstance<ChatEntry.Confirm>().forEach { it.answer(false) }
+                entries.filterIsInstance<ChatEntry.Confirm>().forEach { it.answer(null) }
                 entries.add(ChatEntry.Reply("Stopped", error = true))
             } catch (e: Exception) {
                 entries.add(ChatEntry.Reply(e.message ?: e.toString(), error = true))
@@ -225,13 +231,14 @@ private fun ChatBubble(e: ChatEntry) {
             e.change.tracks.take(12).forEach { Text("${it.artist} — ${it.title}", style = MaterialTheme.typography.bodySmall, color = Muted) }
             if (e.change.tracks.size > 12) Text("and ${e.change.tracks.size - 12} more", style = MaterialTheme.typography.bodySmall, color = Muted)
             Spacer(Modifier.height(6.dp))
-            when (e.answered) {
-                null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Apply", active = true) { e.answer(true) }
-                    Pill("Cancel") { e.answer(false) }
+            val chosen = e.chosen
+            when {
+                !e.answered -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    e.change.actions.forEachIndexed { i, action -> Pill(action.label, active = i == 0) { e.answer(action) } }
+                    Pill("Cancel") { e.answer(null) }
                 }
-                true -> Text("Applied", color = MaterialTheme.colorScheme.primary)
-                false -> Text("Cancelled", color = Muted)
+                chosen != null -> Text(chosen.done, color = MaterialTheme.colorScheme.primary)
+                else -> Text("Cancelled", color = Muted)
             }
         }
     }

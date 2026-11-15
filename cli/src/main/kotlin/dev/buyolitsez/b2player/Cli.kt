@@ -125,6 +125,8 @@ class Cmus(private val cat: Catalog) : AssistantHost {
     // add -Q puts a track at the head of the queue, so the tracks go in reverse.
     override fun playNext(tracks: List<Track>) { cmus(*tracks.reversed().map { "add -Q ${filename(it)}" }.toTypedArray()) }
     override fun addToEnd(tracks: List<Track>) { cmus(*tracks.map { "add -q ${filename(it)}" }.toTypedArray()) }
+    // Each question is a new process: there is no earlier queue to bring back.
+    override fun restoreQueue() = false
 
     /** Added and removed likes, on top of the catalog's flags. */
     private fun likes() = likes ?: state("state/likes.json")?.let { mapper.readTree(it) }.let { j ->
@@ -197,12 +199,15 @@ class Cmus(private val cat: Catalog) : AssistantHost {
 
     override fun reply(text: String, error: Boolean) = println(if (error) "\u001b[31m$text\u001b[0m" else "$text\n")
 
-    override suspend fun confirm(change: AssistantTools.Change): Boolean {
+    override suspend fun confirm(change: AssistantTools.Change): AssistantTools.Action? {
         println("\u001b[1m${change.title}\u001b[0m")
         change.tracks.take(12).forEach { println("  ${it.artist} — ${it.title}") }
         if (change.tracks.size > 12) println("  and ${change.tracks.size - 12} more")
-        print("Apply? [y/N] ")
-        return readlnOrNull()?.trim()?.lowercase() in setOf("y", "yes", "д", "да")
+        // y takes the first action (Apply, Play), 2 the second one (Play next).
+        val more = change.actions.drop(1).withIndex().joinToString("") { (i, a) -> ", ${i + 2} ${a.label.lowercase()}" }
+        print("${change.actions[0].label}? [y$more/N] ")
+        val answer = readlnOrNull()?.trim()?.lowercase()
+        return if (answer in setOf("y", "yes", "д", "да")) change.actions[0] else answer?.toIntOrNull()?.let { change.actions.getOrNull(it - 1) }
     }
 
     private val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
