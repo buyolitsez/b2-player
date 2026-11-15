@@ -121,20 +121,29 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** Opening a screen closes Now playing; [section] also switches the Library tab to it. */
     fun open(s: Screen, inTab: Tab? = null, section: LibrarySection? = null) {
         nowOpen = false; queueOpen = false
+        val from = tab
         if (inTab != null) tab = inTab
         if (section != null) showSection(section)
         stacks[tab] = stack() + s
+        if (tab != from) returnTo = Triple(tab, stack().size, from)
     }
+    /** A screen opened from another tab (e.g. an artist from Search): back from it returns to that tab. */
+    private var returnTo: Triple<Tab, Int, Tab>? = null
     fun back(): Boolean {
         if (queueOpen) { queueOpen = false; return true }
         if (nowOpen) { nowOpen = false; return true }
         val st = stack()
-        if (st.size > 1) { stacks[tab] = st.dropLast(1); return true }
+        if (st.size > 1) {
+            stacks[tab] = st.dropLast(1)
+            returnTo?.let { (t, size, from) -> if (t == tab && size == st.size) { tab = from; returnTo = null } }
+            return true
+        }
         if (tab == Tab.Search && query.isNotEmpty()) { query = ""; return true }
         if (tab != startTab()) { tab = startTab(); return true }
         return false
     }
     fun selectTab(t: Tab) {
+        returnTo = null
         if (t == tab && stack().size > 1) stacks[t] = listOf(Screen.Root) else tab = t
     }
 
