@@ -43,8 +43,11 @@ BRACKETS = re.compile(r"\s*[(\[][^)\]]*[)\]]")
 
 
 def rclone_cat(path):
+    # a missing file gives empty output; a failed read must not pass for one
     r = subprocess.run(["rclone", "cat", path], capture_output=True)
-    return r.stdout if r.returncode == 0 else None
+    if r.returncode != 0:
+        sys.exit(f"rclone cat {path} failed: {r.stderr.decode().strip()}")
+    return r.stdout
 
 
 def norm(s):
