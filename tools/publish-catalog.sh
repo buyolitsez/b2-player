@@ -33,6 +33,12 @@ if missing:
     sys.exit("not published: run tools/sync-music.sh first")
 EOF
 
+# Light copies of new files for streaming on a slow network; the catalog gives the sizes of those in the bucket.
+python3 "$here/make_lite.py" --catalog "$OUT/catalog.json.gz" --out "$OUT"
+rclone copy "$OUT/lite" "$REMOTE/lite" --fast-list --transfers 8
+rclone lsf -R --files-only --fast-list --format sp --separator $'\t' "$REMOTE/lite" > "$OUT/lite-files.txt"
+python3 "$here/make_lite.py" --catalog "$OUT/catalog.json.gz" --mark "$OUT/lite-files.txt"
+
 rclone copy "$OUT/covers" "$REMOTE/covers" --fast-list --transfers 16
 rclone copy "$OUT/lyrics" "$REMOTE/lyrics" --fast-list --transfers 16
 rclone copyto "$OUT/catalog.json.gz" "$REMOTE/catalog.json.gz"

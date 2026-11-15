@@ -54,6 +54,8 @@ class Prefs(context: Context) {
     val undoReplace = Bool("undoReplace", true)
     /** A [QueueFilter] name. */
     val queueFilter = Str("queueFilter", "All")
+    /** Stream the light Opus copies of tracks that have them (the button in Now playing). */
+    val liteStreaming = Bool("liteStreaming", false)
     // Downloads
     val autoDownloadLiked = Bool("autoDownloadLiked", true)
     val autoWifiOnly = Bool("autoWifiOnly", true)
@@ -214,6 +216,8 @@ class App : Application() {
         // the catalog goes first: hidden files that it still lists would not play
         b2.upload("catalog.json.gz", bytes, "application/gzip")
         hide.forEach { b2.hide(prefix + it) }
+        catalog.value?.tracks?.filter { it.path in paths && it.liteSize > 0 }?.distinctBy { it.path }
+            ?.forEach { b2.hide("${Library.LITE}${it.path}.opus") }
         val listed = b2.fetchOrNull("state/deleted.tsv")?.decodeToString().orEmpty()
         b2.upload("state/deleted.tsv", (listed + hide.joinToString("") { "$it\n" }).toByteArray(), "text/tab-separated-values")
         library.catalogFile.writeBytes(bytes)
@@ -266,7 +270,7 @@ class App : Application() {
             File(cacheDir, "media"), LeastRecentlyUsedCacheEvictor(prefs.cacheGb.value.toLong() shl 30),
             StandaloneDatabaseProvider(this),
         )
-        library = Library(this, cache)
+        library = Library(this, cache, prefs)
         // b2://bucket/<key> -> authorized HTTPS request. The cache key is the b2:// URI, so it
         // stays stable although the auth token changes.
         val upstream = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setTransferListener(NetTimings)) { spec ->

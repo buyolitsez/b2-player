@@ -51,6 +51,7 @@ tools/sync-music.sh --dry-run          # show what would change
 tools/sync-music.sh                    # upload new and changed files of the music folder -> music/
 tools/sync-music.sh -- "rock/Artist"   # only these subfolders
 tools/publish-catalog.sh               # check that every path is in the bucket, then upload catalog + covers
+tools/make_lite.py                     # light Opus copies for slow networks (publish-catalog.sh runs it too)
 tools/apply-tags.py                    # tag edits from the phone: what would change in the files
 tools/apply-tags.py --apply            # write them to the files and drop them from state/tags.json
 tools/sync-ratings.py                  # album ratings: what would change in the diary and state/ratings.json
@@ -64,6 +65,14 @@ The music folder may keep only part of the music: `sync-music.sh` never deletes 
 `publish-catalog.sh` keeps the tracks that are still in the bucket in the catalog (with their old tags,
 likes and lyrics). To remove an album from the bucket, or the old folder after a rename, use
 `rclone purge "$B2_PLAYER_REMOTE/music/<folder>"`. Tag edits and `fetch-lyrics.py` only reach local files.
+
+Lite streaming, for a slow network: `make_lite.py` encodes every file of the catalog from 256 kbps up
+(lossless, 320 kbps MP3) to Opus 128 kbps as `lite/<path>.opus`, from the music folder or, for files that
+are only in the bucket, through the bucket mount (`~/b2music`). Lighter files are left as they are.
+`publish-catalog.sh` runs it for new and changed files, uploads the copies and gives each track the size of
+its copy (`"lite"`). The LITE button in Now playing switches the phone to them; downloaded tracks and
+originals already in the stream cache still play from there. The copies take about a quarter of the
+library's size.
 
 Tag editing: "Track info" in a track's menu → Edit. The phone puts edits into `state/tags.json`
 (`{"tracks": {"<path>": {"GENRE": "…"}}}`, an empty value removes the tag) and shows them over the

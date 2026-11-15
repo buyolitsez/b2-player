@@ -39,7 +39,7 @@ class TrackTags(val format: String?, val tags: Map<String, String>)
 
 /** Every tag in the track's file, read by Media3 from the file itself: downloaded, cached or streamed from B2. */
 fun readTags(app: App, t: Track): TrackTags {
-    val groups = MetadataRetriever.Builder(app, app.library.mediaItem(t))
+    val groups = MetadataRetriever.Builder(app, app.library.mediaItem(t, lite = false))
         .setMediaSourceFactory(DefaultMediaSourceFactory(app.dataSourceFactory)).build()
         .use { it.retrieveTrackGroups().get(30, TimeUnit.SECONDS) }
     var format: String? = null

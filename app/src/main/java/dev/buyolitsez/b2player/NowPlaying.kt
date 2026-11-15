@@ -92,9 +92,14 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
                 )
             },
         )
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             val at = (dragging?.let { it * dur } ?: pos.toFloat()) / 1000.0
             Text(formatTime(at), style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
+            // Lite streaming for a slow network; lit when on.
+            val lite = ui.prefs.liteStreaming.value
+            Text("LITE", Modifier.clip(RoundedCornerShape(10.dp)).background(if (lite) accent.copy(alpha = 0.22f) else white.copy(alpha = 0.08f))
+                .clickable { ui.toggleLite() }.padding(horizontal = 10.dp, vertical = 3.dp),
+                style = MaterialTheme.typography.labelSmall, color = if (lite) accent else Color(0xFF9A9A9A))
             Text("-" + formatTime((t.duration - at).coerceAtLeast(0.0)), style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
