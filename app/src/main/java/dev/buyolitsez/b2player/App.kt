@@ -23,7 +23,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 /** User preferences that are not B2 credentials. Compose-observable, so settings rows update live. */
 class Prefs(context: Context) {
@@ -168,16 +173,16 @@ class App : Application() {
     fun deleteFromBucket(tracks: List<Track>): Int {
         val paths = tracks.map { it.path }.toSet()
         // the published catalog, not the loaded one, so that nothing published since is lost
-        val json = org.json.JSONObject(java.util.zip.GZIPInputStream(b2.open("catalog.json.gz").inputStream).use { it.readBytes().decodeToString() })
+        val json = JSONObject(GZIPInputStream(b2.open("catalog.json.gz").inputStream).use { it.readBytes().decodeToString() })
         val prefix = json.optString("musicPrefix", "music/")
         val albums = json.getJSONArray("albums")
-        val kept = org.json.JSONArray()
+        val kept = JSONArray()
         val dirs = HashSet<String>(); val left = HashSet<String>()
         var deleted = 0
         for (i in 0 until albums.length()) {
             val al = albums.getJSONObject(i)
             val all = al.getJSONArray("tracks")
-            val keep = org.json.JSONArray()
+            val keep = JSONArray()
             for (j in 0 until all.length()) {
                 val path = all.getJSONObject(j).getString("path")
                 if (path in paths) { dirs += al.getString("dir"); deleted++ } else { keep.put(all.getJSONObject(j)); left += path }
@@ -187,8 +192,8 @@ class App : Application() {
         json.put("albums", kept)
         val hide = paths.toMutableSet()
         for (d in dirs) if (left.none { it.startsWith("$d/") }) hide += b2.list("$prefix$d/").map { it.removePrefix(prefix) }
-        val bytes = java.io.ByteArrayOutputStream().also { out ->
-            java.util.zip.GZIPOutputStream(out).use { it.write(json.toString().toByteArray()) }
+        val bytes = ByteArrayOutputStream().also { out ->
+            GZIPOutputStream(out).use { it.write(json.toString().toByteArray()) }
         }.toByteArray()
         // the catalog goes first: hidden files that it still lists would not play
         b2.upload("catalog.json.gz", bytes, "application/gzip")
@@ -196,7 +201,7 @@ class App : Application() {
         val listed = b2.fetchOrNull("state/deleted.tsv")?.decodeToString().orEmpty()
         b2.upload("state/deleted.tsv", (listed + hide.joinToString("") { "$it\n" }).toByteArray(), "text/tab-separated-values")
         library.catalogFile.writeBytes(bytes)
-        library.catalogSha = java.security.MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        library.catalogSha = sha1Hex(bytes)
         catalog.value?.tracks?.filter { it.path in paths }?.forEach { library.deleteDownload(it) }
         catalog.value = Catalog.parse(bytes)
         return deleted

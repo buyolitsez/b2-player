@@ -12,7 +12,6 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
 
 data class LyricLine(val ms: Long, val text: String)
 
@@ -93,7 +92,7 @@ class LyricsRepo(private val app: App) {
     }
 
     private fun enc(s: String) = Uri.encode(s)
-    private fun hash(s: String) = MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).take(10).joinToString("") { "%02x".format(it) }
+    private fun hash(s: String) = sha1Hex(s.toByteArray()).take(20)
 
     private fun toJson(l: Lyrics) = JSONObject().put("source", l.source).put("plain", l.plain ?: JSONObject.NULL)
         .put("synced", l.synced?.let { JSONArray(it.map { x -> JSONObject().put("ms", x.ms).put("t", x.text) }) } ?: JSONObject.NULL)
