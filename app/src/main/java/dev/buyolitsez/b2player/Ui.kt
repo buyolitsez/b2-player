@@ -393,12 +393,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         version++
     }
 
-    fun stopAfter(t: Track) {
-        app.stopAfterId.value = if (app.stopAfterId.value == t.id) null else t.id
-        version++
-        toast(if (app.stopAfterId.value != null) "Will stop after “${t.title}”" else "Won't stop")
-    }
-
     // ---------- likes and downloads ----------
 
     fun toggleLike(t: Track) = setLiked(listOf(t), !library.isLiked(t))
