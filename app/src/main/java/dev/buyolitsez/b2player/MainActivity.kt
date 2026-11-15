@@ -58,6 +58,7 @@ import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -93,6 +94,16 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
+        if (intent.getBooleanExtra(Updates.INSTALL, false)) app.updates.install()
+        // An update downloaded in the background offers to install while the app is open; the notification offers it too.
+        lifecycleScope.launch {
+            snapshotFlow { app.updates.ready }.collectLatest {
+                if (it == null) return@collectLatest
+                ui.snackbar.currentSnackbarData?.dismiss()
+                val text = "B2 Player ${app.updates.newer.firstOrNull()?.version.orEmpty()} is ready"
+                if (ui.snackbar.showSnackbar(text, "Install", duration = SnackbarDuration.Indefinite) == SnackbarResult.ActionPerformed) app.updates.install()
+            }
+        }
         // Download progress and finished downloads refresh the "downloaded" marks in lists,
         // at most every 2 s: each refresh recomputes the open list.
         lifecycleScope.launch {
@@ -109,6 +120,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
+        if (intent.getBooleanExtra(Updates.INSTALL, false)) (application as App).updates.install()
     }
 
     companion object { const val OPEN_NOW_PLAYING = "openNowPlaying" }
