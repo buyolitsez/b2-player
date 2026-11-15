@@ -491,7 +491,7 @@ fun LikedScreen(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
     val liked = remember(cat, ui.version, byRecent, fq) {
-        val l = cat.tracks.filter { fq in it.searchKey && ui.library.isLiked(it) }
+        val l = cat.tracks.filter { ui.library.isLiked(it) && (fq.isEmpty() || fq in it.searchKey) }
         if (byRecent) l.sortedByDescending { it.album.added } else l
     }
     Column {

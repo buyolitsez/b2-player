@@ -58,6 +58,7 @@ import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -92,11 +93,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (intent.getBooleanExtra(OPEN_NOW_PLAYING, false)) ui.nowOpen = true
-        // Download progress and finished downloads refresh the "downloaded" marks in lists.
+        // Download progress and finished downloads refresh the "downloaded" marks in lists,
+        // at most every 2 s: each refresh recomputes the open list.
         lifecycleScope.launch {
             WorkManager.getInstance(this@MainActivity).getWorkInfosByTagFlow(DownloadWorker.TAG)
                 .map { list -> list.map { it.state to it.progress.getInt("done", 0) } }
-                .distinctUntilChanged().drop(1).collect { ui.version++ }
+                .distinctUntilChanged().drop(1).conflate().collect { ui.version++; delay(2000) }
         }
         setContent {
             val accent by animateColorAsState(ui.colors.accent, label = "accent")
@@ -168,12 +170,12 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
     LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
-        ui.colors = (if (ui.prefs.coverTint.value) coverKey?.let { k -> ui.covers.load(k)?.let { coverColors(it) } } else null) ?: DefaultColors
+        ui.colors = (if (ui.prefs.coverTint.value) coverKey?.let { k -> ui.covers.load(k)?.let { withContext(Dispatchers.Default) { coverColors(it) } } } else null) ?: DefaultColors
     }
     // The album and Liked screens get their color at the top, fading out under the list.
     val headerTint by produceState<UiColor?>(null, screen) {
         value = when (screen) {
-            is Screen.AlbumView -> screen.album.cover?.let { k -> ui.covers.load(k)?.let { coverColors(it).background } }
+            is Screen.AlbumView -> screen.album.cover?.let { k -> ui.covers.load(k)?.let { withContext(Dispatchers.Default) { coverColors(it).background } } }
             Screen.LikedView -> LikedTint
             else -> null
         }
