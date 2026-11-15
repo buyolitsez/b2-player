@@ -267,6 +267,27 @@ def walk(root, only):
             yield d, dirs, sorted(files)
 
 
+# Tags and lyrics of every file read last time, by its size and mtime (and its .lrc), so a publish
+# reads only new and changed files. Kept in --out as tags-cache.json.
+tag_cache, new_tag_cache = {}, {}
+
+
+def cached(kind, path, stamp, read):
+    c = tag_cache.get(kind + path)
+    v = c[1] if c and c[0] == stamp else read(path)
+    new_tag_cache[kind + path] = [stamp, v]
+    return v
+
+
+def tags_cached(path, st):
+    return cached("t:", path, [st.st_size, st.st_mtime_ns], read_tags)
+
+
+def lyrics_cached(path, st):
+    lrc = os.path.splitext(path)[0] + ".lrc"
+    return cached("l:", path, [st.st_size, st.st_mtime_ns, os.stat(lrc).st_mtime_ns if os.path.exists(lrc) else 0], lyrics_of)
+
+
 def favourite_index(fav_root):
     by_name_size, by_tag = set(), {}
     if not fav_root or not os.path.isdir(fav_root):
@@ -276,8 +297,9 @@ def favourite_index(fav_root):
             if os.path.splitext(f)[1].lower() not in AUDIO_EXT:
                 continue
             p = os.path.join(d, f)
-            by_name_size.add((f, os.path.getsize(p)))
-            t = read_tags(p) or {}
+            st = os.stat(p)
+            by_name_size.add((f, st.st_size))
+            t = tags_cached(p, st) or {}
             if t.get("artist") and t.get("title"):
                 by_tag[(t["artist"].lower(), t["title"].lower())] = os.path.relpath(p, fav_root)
     return by_name_size, by_tag
@@ -329,6 +351,12 @@ def main():
     a = ap.parse_args()
 
     root = os.path.abspath(a.music)
+    cache_file = os.path.join(a.out, "tags-cache.json")
+    try:
+        with open(cache_file, encoding="utf-8") as fh:
+            tag_cache.update(json.load(fh))
+    except (FileNotFoundError, ValueError):
+        pass
     fav_ns, fav_tags = favourite_index(a.favourites)
     matched_fav_tags = set()
 
@@ -370,11 +398,11 @@ def main():
             except UnicodeEncodeError:
                 bad_names.append(rel)
                 continue
-            t = read_tags(p)
+            st = os.stat(p)
+            t = tags_cached(p, st)
             if t is None:
                 continue
-            st = os.stat(p)
-            lyr = None if f in cue_tracks else lyrics_of(p)
+            lyr = None if f in cue_tracks else lyrics_cached(p, st)
             # A favourite CUE image says nothing about which of its tracks were liked: match those by tags.
             liked = f not in cue_tracks and ((f, st.st_size) in fav_ns or fav(t["artist"], t["title"]))
             entries = []
@@ -469,6 +497,10 @@ def main():
                "musicPrefix": "music/", "albums": out_albums}
     with gzip.open(os.path.join(a.out, "catalog.json.gz"), "wt", encoding="utf-8") as fh:
         json.dump(catalog, fh, ensure_ascii=False, separators=(",", ":"))
+    # a run over some folders keeps the other entries; a full run drops those of deleted files
+    with open(cache_file + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump({**tag_cache, **new_tag_cache} if a.only else new_tag_cache, fh, ensure_ascii=False)
+    os.replace(cache_file + ".tmp", cache_file)
 
     unmatched = []
     if not a.only:
