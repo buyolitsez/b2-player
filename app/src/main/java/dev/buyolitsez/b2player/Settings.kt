@@ -20,6 +20,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @UnstableApi
 @Composable
@@ -259,6 +268,67 @@ fun <T> SettingChoice(title: String, subtitle: String?, options: List<T>, value:
             Text(label(value), style = MaterialTheme.typography.bodyMedium, color = Muted)
             DropdownMenu(open, { open = false }, containerColor = Gray2) {
                 options.forEach { o -> DropdownMenuItem({ Text(label(o)) }, { open = false; onChange(o) }) }
+            }
+        }
+    }
+}
+
+// ---------------- downloads ----------------
+
+@UnstableApi
+@Composable
+fun DownloadsScreen(ui: Ui, cat: Catalog) {
+    val works by WorkManager.getInstance(ui.context).getWorkInfosByTagFlow(DownloadWorker.TAG).collectAsState(emptyList())
+    val active = works.filter { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+    val downloaded by produceState<List<Pair<Album, List<Track>>>?>(null, cat, ui.version, active.size) {
+        value = withContext(Dispatchers.IO) {
+            cat.albums.mapNotNull { a -> a.tracks.filter { ui.library.isDownloaded(it) }.takeIf { it.isNotEmpty() }?.let { a to it } }
+        }
+    }
+    val total = downloaded?.sumOf { (_, t) -> t.distinctBy { it.path }.sumOf { it.size } } ?: 0
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = searchFold(q.trim())
+    Column {
+        FilterField(ui, q) { q = it }
+        LazyColumn(contentPadding = listPadding()) {
+            item {
+                Text(
+                    "Downloaded: ${formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
+                    Modifier.padding(20.dp, 8.dp), style = MaterialTheme.typography.bodyMedium,
+                )
+                if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 20.dp)) {
+                    Pill("Cancel all", Icons.Default.Cancel) { DownloadWorker.cancelAll(ui.context) }
+                }
+            }
+            if (active.isNotEmpty()) item { SectionTitle("In progress") }
+            items(active, key = { it.id }) { w ->
+                val title = w.progress.getString("title") ?: "Queued"
+                val done = w.progress.getInt("done", 0); val all = w.progress.getInt("total", 0)
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    Row {
+                        Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (w.state == WorkInfo.State.ENQUEUED) "waiting for network" else "$done / $all", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    LinearProgressIndicator({ if (all > 0) done / all.toFloat() else 0f }, Modifier.fillMaxWidth().padding(top = 4.dp))
+                }
+            }
+            item { SectionTitle("On this phone") }
+            val list = downloaded?.filter { fq in it.first.searchKey }
+            if (list == null) item { Text("Counting…", Modifier.padding(20.dp), color = Muted) }
+            else if (list.isEmpty()) item { Text("Nothing downloaded yet", Modifier.padding(20.dp), color = Muted) }
+            else items(list, key = { it.first.id }) { (a, t) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { ui.open(Screen.AlbumView(a)) }.padding(start = 20.dp, end = 4.dp).height(64.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Cover(ui, a.cover, 48.dp)
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                        Text(a.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                        Text("${a.artist} · ${t.size} of ${a.tracks.size} · ${formatSize(t.distinctBy { it.path }.sumOf { it.size })}",
+                            style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1)
+                    }
+                    SmallIcon(Icons.Default.Delete) { ui.deleteDownloads(t) }
+                }
             }
         }
     }
