@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.launch
 
 @UnstableApi
 @Composable
@@ -123,8 +124,15 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingAction("Clear logs", null) { AppLog.clear(); ui.version++; ui.toast("Logs cleared") }
         }
 
-        Text("B2 Player ${ui.context.packageManager.getPackageInfo(ui.context.packageName, 0).versionName}",
-            Modifier.padding(20.dp, 24.dp), color = Muted, style = MaterialTheme.typography.bodySmall)
+        SettingsGroup("About") {
+        val u = app.updates
+        SettingAction("Check for updates", "Installed: ${u.installed}" + (u.newer.firstOrNull()?.let { ". ${it.version} is available" } ?: "")) {
+            ui.scope.launch {
+                runCatching { u.check() }.onSuccess { if (it.isEmpty()) ui.toast("B2 Player is up to date") else u.dialog = true }
+                    .onFailure { ui.toast("Update check failed: ${it.message}") }
+            }
+        }
+        }
     }
 }
 
