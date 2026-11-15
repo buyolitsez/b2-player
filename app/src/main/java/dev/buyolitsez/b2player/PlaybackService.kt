@@ -146,6 +146,9 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         // A new queue or shuffle turned on: the current track goes first in the shuffle order.
         val sessionPlayer = object : ForwardingPlayer(player) {
+            // "Next" stays in the media controls on the last track too, where it does nothing, so the buttons don't shift.
+            override fun getAvailableCommands(): Player.Commands = super.getAvailableCommands().buildUpon().add(Player.COMMAND_SEEK_TO_NEXT).build()
+            override fun isCommandAvailable(command: Int) = command == Player.COMMAND_SEEK_TO_NEXT || super.isCommandAvailable(command)
             override fun setMediaItems(items: MutableList<MediaItem>) { super.setMediaItems(items); shuffleFromCurrent(player) }
             override fun setMediaItems(items: MutableList<MediaItem>, resetPosition: Boolean) {
                 super.setMediaItems(items, resetPosition); shuffleFromCurrent(player)
