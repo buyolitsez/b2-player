@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -147,6 +148,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
     val stack = ui.stack()
     val screen = stack.last()
+    val saved = rememberSaveableStateHolder()
     // Back first closes the keyboard, then goes back.
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
@@ -277,44 +279,47 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         Text(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = if (progress) Muted else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     val c = cat
-                    when {
-                        screen == Screen.Settings -> SettingsScreen(ui, c)
-                        screen == Screen.Accounts -> AccountsScreen(ui)
-                        c == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
-                        screen == Screen.Downloads -> DownloadsScreen(ui, c)
-                        screen == Screen.Assistant -> AssistantScreen(ui)
-                        screen == Screen.EqualizerView -> EqualizerScreen(ui)
-                        // the album as in the current catalog, so tracks deleted from it leave the screen
-                        screen is Screen.AlbumView -> AlbumScreen(ui, c.albums.find { it.id == screen.album.id } ?: screen.album)
-                        screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
-                        screen is Screen.GenreView -> GenreScreen(ui, c, screen.name)
-                        screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
-                        screen is Screen.PlaylistView -> PlaylistScreen(ui, c, screen.id)
-                        screen == Screen.LikedView -> LikedScreen(ui, c)
-                        screen == Screen.HistoryView -> HistoryScreen(ui, c)
-                        else -> when (ui.tab) {
-                            Tab.Library -> Column {
-                                Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Row(
-                                        Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
-                                    // The whole library, in order or shuffled.
-                                    SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 24.dp) { ui.play(c.tracks, shuffled = true) }
-                                    Box(
-                                        Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(c.tracks) },
-                                        Alignment.Center,
-                                    ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
+                    // Each open screen keeps its own scroll position and other saved state, so going back returns to where it was.
+                    saved.SaveableStateProvider("${ui.tab}/${stack.size}/$screen") {
+                        when {
+                            screen == Screen.Settings -> SettingsScreen(ui, c)
+                            screen == Screen.Accounts -> AccountsScreen(ui)
+                            c == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
+                            screen == Screen.Downloads -> DownloadsScreen(ui, c)
+                            screen == Screen.Assistant -> AssistantScreen(ui)
+                            screen == Screen.EqualizerView -> EqualizerScreen(ui)
+                            // the album as in the current catalog, so tracks deleted from it leave the screen
+                            screen is Screen.AlbumView -> AlbumScreen(ui, c.albums.find { it.id == screen.album.id } ?: screen.album)
+                            screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
+                            screen is Screen.GenreView -> GenreScreen(ui, c, screen.name)
+                            screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
+                            screen is Screen.PlaylistView -> PlaylistScreen(ui, c, screen.id)
+                            screen == Screen.LikedView -> LikedScreen(ui, c)
+                            screen == Screen.HistoryView -> HistoryScreen(ui, c)
+                            else -> when (ui.tab) {
+                                Tab.Library -> Column {
+                                    Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
+                                        // The whole library, in order or shuffled.
+                                        SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 24.dp) { ui.play(c.tracks, shuffled = true) }
+                                        Box(
+                                            Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(c.tracks) },
+                                            Alignment.Center,
+                                        ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
+                                    }
+                                    when (ui.section) {
+                                        LibrarySection.Albums -> AlbumsTab(ui, c)
+                                        LibrarySection.Artists -> ArtistsTab(ui, c)
+                                        LibrarySection.Genres -> GenresTab(ui, c)
+                                        LibrarySection.Folders -> FolderScreen(ui, c, "")
+                                    }
                                 }
-                                when (ui.section) {
-                                    LibrarySection.Albums -> AlbumsTab(ui, c)
-                                    LibrarySection.Artists -> ArtistsTab(ui, c)
-                                    LibrarySection.Genres -> GenresTab(ui, c)
-                                    LibrarySection.Folders -> FolderScreen(ui, c, "")
-                                }
+                                Tab.Playlists -> PlaylistsTab(ui, c)
+                                Tab.Search -> SearchTab(ui, c)
                             }
-                            Tab.Playlists -> PlaylistsTab(ui, c)
-                            Tab.Search -> SearchTab(ui, c)
                         }
                     }
                 }
