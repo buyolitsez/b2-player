@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -161,6 +162,21 @@ class App : Application() {
             // CUE tracks share a file: keep it while another of its tracks is still liked.
             changed.filter { t -> t.album.tracks.none { it.path == t.path && library.isLiked(it) } }
                 .distinctBy { it.path }.forEach { library.deleteDownload(it) }
+        }
+    }
+
+    /** Loads the bucket's catalog, unless a HEAD request shows the saved one is the same: most launches skip the download. */
+    suspend fun refreshCatalog() {
+        val started = System.currentTimeMillis()
+        val sha = withContext(Dispatchers.IO) { b2.open("catalog.json.gz", "HEAD").getHeaderField("x-bz-content-sha1") }
+        if (sha != null && sha == library.catalogSha && library.catalogFile.exists()) {
+            cachedCatalogLoad.join()
+            AppLog.i("catalog", "Unchanged, checked in ${System.currentTimeMillis() - started} ms")
+        } else {
+            val bytes = withContext(Dispatchers.IO) { b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
+            catalog.value = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
+            withContext(Dispatchers.IO) { library.catalogFile.writeBytes(bytes); library.catalogSha = sha }
+            AppLog.i("catalog", "Loaded ${catalog.value?.albums?.size} albums, ${bytes.size / 1024} KB, ${System.currentTimeMillis() - started} ms")
         }
     }
 
