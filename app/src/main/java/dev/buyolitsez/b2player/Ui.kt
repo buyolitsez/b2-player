@@ -199,26 +199,26 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     /**
      * Replaces the queue; the old one can be brought back from the snackbar. [index] is the tapped
-     * track, which plays even when the queue filter leaves it out; without it the queue starts at the top.
+     * track; without it the queue starts at the top. A new queue drops the queue filter.
      */
     fun play(tracks: List<Track>, index: Int = -1, shuffled: Boolean = false, positionMs: Long = 0) = scope.launch {
         val c = controller ?: return@launch
-        val tapped = tracks.getOrNull(index)
-        val list = tracks.filter { it == tapped || passes(it) }
-        if (list.isEmpty()) { toast("No ${queueFilter.title.lowercase()} tracks here"); return@launch }
-        val start = tapped?.let { list.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+        if (tracks.isEmpty()) return@launch
+        filterJob?.cancel()
+        prefs.queueFilter.set(QueueFilter.All.name)
+        val start = index.coerceIn(0, tracks.size - 1)
         val before = snapshot()
         val wasShuffled = c.shuffleModeEnabled
         // "Shuffle" turns shuffle on; a plain play keeps whatever mode the player is in.
         if (shuffled) c.shuffleModeEnabled = true
-        AppLog.d("ui", "Play ${list.size} tracks from ${list.first().album.dir}, start $start, shuffle $shuffled")
+        AppLog.d("ui", "Play ${tracks.size} tracks from ${tracks.first().album.dir}, start $start, shuffle $shuffled")
         // A file check per track: for a 2600-track list that is too slow for the main thread.
-        val items = withContext(Dispatchers.IO) { list.map { library.mediaItem(it) } }
+        val items = withContext(Dispatchers.IO) { tracks.map { library.mediaItem(it) } }
         if (controller !== c) return@launch
         library.queueSource = tracks.map { it.id }
-        c.setMediaItems(items, if (shuffled) list.indices.random() else start, if (shuffled) 0 else positionMs)
+        c.setMediaItems(items, if (shuffled) tracks.indices.random() else start, if (shuffled) 0 else positionMs)
         c.prepare(); c.play()
-        if (prefs.undoReplace.value && before != null && before.ids != list.map { it.id }) {
+        if (prefs.undoReplace.value && before != null && before.ids != tracks.map { it.id }) {
             scope.launch {
                 snackbar.currentSnackbarData?.dismiss()
                 if (snackbar.showSnackbar("Queue replaced", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
