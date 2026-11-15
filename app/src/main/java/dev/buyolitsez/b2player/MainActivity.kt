@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -200,6 +201,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         is Screen.ArtistView, is Screen.GenreView, is Screen.FolderView, is Screen.PlaylistView, Screen.LikedView, Screen.Downloads -> true
         else -> false
     }
+    // Screens that follow the library's like filter.
+    val likeFiltered = screen == Screen.Root || screen is Screen.AlbumView || screen is Screen.ArtistView || screen is Screen.GenreView ||
+        screen is Screen.FolderView || screen is Screen.PlaylistView
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         headerTint?.let { Box(Modifier.fillMaxSize().background(fade(it, tintHeight))) }
@@ -228,6 +232,23 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     navigationIcon = { if (stack.size > 1) IconButton({ ui.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                     actions = {
                         if (hasFilter) IconButton({ ui.filterOpen = !ui.filterOpen }) { Icon(Icons.Default.Search, "Search in this list") }
+                        // Tap: liked tracks only or everything; long press: tracks that aren't liked.
+                        if (likeFiltered) {
+                            val f = ui.libraryFilter
+                            Box(
+                                Modifier.size(48.dp).clip(CircleShape).combinedClickable(
+                                    onLongClick = { ui.setLibraryFilter(LikeFilter.NotLiked) },
+                                    onClick = { ui.setLibraryFilter(if (f == LikeFilter.All) LikeFilter.Liked else LikeFilter.All) },
+                                ),
+                                Alignment.Center,
+                            ) {
+                                when (f) {
+                                    LikeFilter.All -> Icon(Icons.Default.FavoriteBorder, "Show liked tracks only")
+                                    LikeFilter.Liked -> Icon(Icons.Default.Favorite, "Show all tracks", tint = MaterialTheme.colorScheme.primary)
+                                    LikeFilter.NotLiked -> Icon(Icons.Default.HeartBroken, "Show all tracks", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
                         if (screen is Screen.ArtistView || screen is Screen.GenreView) {
                             IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
                                 Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
@@ -298,14 +319,15 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         val progress = it == Ui.UPDATING
                         Text(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = if (progress) Muted else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
-                    val c = cat
+                    val full = cat
+                    val c = remember(full, ui.libraryFilter, ui.version) { full?.let { ui.libraryView(it) } }
                     // Each open screen keeps its own scroll position and other saved state, so going back returns to where it was.
                     saved.SaveableStateProvider("${ui.tab}/${stack.size}/$screen") {
                         when {
-                            screen == Screen.Settings -> SettingsScreen(ui, c)
+                            screen == Screen.Settings -> SettingsScreen(ui, full)
                             screen == Screen.Accounts -> AccountsScreen(ui)
-                            c == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
-                            screen == Screen.Downloads -> DownloadsScreen(ui, c)
+                            c == null || full == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
+                            screen == Screen.Downloads -> DownloadsScreen(ui, full)
                             screen == Screen.Assistant -> AssistantScreen(ui)
                             screen == Screen.EqualizerView -> EqualizerScreen(ui)
                             // the album as in the current catalog, so tracks deleted from it leave the screen
@@ -313,9 +335,10 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             screen is Screen.ArtistView -> ArtistScreen(ui, c, screen.name)
                             screen is Screen.GenreView -> GenreScreen(ui, c, screen.name)
                             screen is Screen.FolderView -> FolderScreen(ui, c, screen.path)
-                            screen is Screen.PlaylistView -> PlaylistScreen(ui, c, screen.id)
-                            screen == Screen.LikedView -> LikedScreen(ui, c)
-                            screen == Screen.HistoryView -> HistoryScreen(ui, c)
+                            // The whole catalog: the playlist's own rows keep their places, the filter only hides some.
+                            screen is Screen.PlaylistView -> PlaylistScreen(ui, full, screen.id)
+                            screen == Screen.LikedView -> LikedScreen(ui, full)
+                            screen == Screen.HistoryView -> HistoryScreen(ui, full)
                             else -> when (ui.tab) {
                                 Tab.Library -> Column {
                                     Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -337,7 +360,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                         LibrarySection.Folders -> FolderScreen(ui, c, "")
                                     }
                                 }
-                                Tab.Playlists -> PlaylistsTab(ui, c)
+                                Tab.Playlists -> PlaylistsTab(ui, full)
                                 Tab.Search -> SearchTab(ui, c)
                             }
                         }

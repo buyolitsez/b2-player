@@ -28,8 +28,8 @@ enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), 
 /** What the Library tab lists. */
 enum class LibrarySection { Albums, Artists, Genres, Folders }
 
-/** Which tracks of what was played the queue keeps. */
-enum class QueueFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
+/** Which tracks the queue (see [Ui.setQueueFilter]) and the library (see [Ui.libraryFilter]) keep. */
+enum class LikeFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
 
 enum class AlbumSort(val title: String) { Artist("By artist"), Recent("Recently added"), Rating("By rating") }
 
@@ -159,12 +159,36 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     // ---------- library helpers ----------
 
+    private fun LikeFilter.keeps(t: Track) = when (this) {
+        LikeFilter.All -> true
+        LikeFilter.Liked -> library.isLiked(t)
+        LikeFilter.NotLiked -> !library.isLiked(t)
+    }
+
     /** Which tracks the queue keeps, see [setQueueFilter]. */
-    val queueFilter get() = QueueFilter.entries.firstOrNull { it.name == prefs.queueFilter.value } ?: QueueFilter.All
-    private fun passes(t: Track) = when (queueFilter) {
-        QueueFilter.All -> true
-        QueueFilter.Liked -> library.isLiked(t)
-        QueueFilter.NotLiked -> !library.isLiked(t)
+    val queueFilter get() = LikeFilter.entries.firstOrNull { it.name == prefs.queueFilter.value } ?: LikeFilter.All
+    private fun passes(t: Track) = queueFilter.keeps(t)
+
+    /** Which tracks the library, search and playlists show; liked ones are the downloaded ones, so this is what plays on a bad network. */
+    val libraryFilter get() = LikeFilter.entries.firstOrNull { it.name == prefs.libraryFilter.value } ?: LikeFilter.All
+    fun shows(t: Track) = libraryFilter.keeps(t)
+    fun setLibraryFilter(f: LikeFilter) {
+        prefs.libraryFilter.set(f.name)
+        toast(when (f) { LikeFilter.All -> "Showing all tracks"; LikeFilter.Liked -> "Showing liked tracks only"; LikeFilter.NotLiked -> "Showing tracks that aren't liked" })
+    }
+
+    /** [cat] with only the tracks [libraryFilter] keeps; albums left without tracks are dropped. */
+    fun libraryView(cat: Catalog): Catalog {
+        val f = libraryFilter
+        if (f == LikeFilter.All) return cat
+        return Catalog(cat.albums.mapNotNull { a ->
+            val kept = a.tracks.filter { f.keeps(it) }
+            when (kept.size) {
+                0 -> null
+                a.tracks.size -> a
+                else -> Album(a.id, a.dir, a.title, a.artist, a.year, a.cover, a.added, a.genre).also { it.tracks = kept }
+            }
+        })
     }
 
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
@@ -205,7 +229,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val c = controller ?: return@launch
         if (tracks.isEmpty()) return@launch
         filterJob?.cancel()
-        prefs.queueFilter.set(QueueFilter.All.name)
+        prefs.queueFilter.set(LikeFilter.All.name)
         val start = index.coerceIn(0, tracks.size - 1)
         val before = snapshot()
         val wasShuffled = c.shuffleModeEnabled
@@ -268,7 +292,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
      * Keeps only the tracks of [source] that pass [f]; the current track plays on either way. A quick
      * second tap cancels the first one while it still prepares the tracks: both would edit the queue.
      */
-    fun setQueueFilter(f: QueueFilter) {
+    fun setQueueFilter(f: LikeFilter) {
         prefs.queueFilter.set(f.name)
         filterJob?.cancel()
         filterJob = scope.launch { applyQueueFilter() }

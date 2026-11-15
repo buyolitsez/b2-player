@@ -419,7 +419,9 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = searchFold(q.trim())
     // Rows keep their playlist index so remove works on the filtered list; dragging is off while filtering.
-    val shown = remember(tracks, fq) { tracks.indices.filter { fq in tracks[it].searchKey } }
+    val likeFilter = ui.libraryFilter
+    val shown = remember(tracks, fq, likeFilter, ui.version) { tracks.indices.filter { fq in tracks[it].searchKey && ui.shows(tracks[it]) } }
+    val drag = fq.isEmpty() && likeFilter == LikeFilter.All
     val shownTracks = remember(shown) { shown.map { tracks[it] } }
     Column {
         FilterField(ui, q) { q = it }
@@ -438,11 +440,11 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
             }
             itemsIndexed(shown, key = { _, i -> keys[i] }) { pos, i ->
                 val t = tracks[i]
-                ReorderableItem(reorder, key = keys[i], enabled = fq.isEmpty()) {
+                ReorderableItem(reorder, key = keys[i], enabled = drag) {
                     TrackRow(
                         ui, t, showCover = true, onClick = { ui.play(shownTracks, pos) },
-                        dragHandle = if (fq.isEmpty()) ({ DragHandle(Modifier.draggableHandle()) }) else null,
-                        dragModifier = if (fq.isEmpty()) longPressDrag() else Modifier,
+                        dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null,
+                        dragModifier = if (drag) longPressDrag() else Modifier,
                         onSwipeLeft = { dropAt(i) }, swipeLeftLabel = "Remove from playlist",
                         extraMenu = { close -> MenuItem("Remove from playlist", Icons.Default.RemoveCircleOutline, close) { dropAt(i) } },
                     )

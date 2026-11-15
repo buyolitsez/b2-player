@@ -292,7 +292,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
             }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QueueFilter.entries.forEach { f -> Pill(f.title, active = f == ui.queueFilter) { ui.setQueueFilter(f) } }
+                LikeFilter.entries.forEach { f -> Pill(f.title, active = f == ui.queueFilter) { ui.setQueueFilter(f) } }
             }
             if (filter || q.isNotEmpty()) SearchBox(q, { q = it }, "Search")
             LazyColumn(Modifier.weight(1f), state = listState) {
