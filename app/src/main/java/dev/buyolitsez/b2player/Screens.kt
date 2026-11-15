@@ -422,6 +422,8 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
     val likeFilter = ui.libraryFilter
     val shown = remember(tracks, fq, likeFilter, ui.version) { tracks.indices.filter { fq in tracks[it].searchKey && ui.shows(tracks[it]) } }
     val drag = fq.isEmpty() && likeFilter == LikeFilter.All
+    // The header counts what the like filter shows.
+    val counted = remember(tracks, likeFilter, ui.version) { tracks.filter { ui.shows(it) } }
     val shownTracks = remember(shown) { shown.map { tracks[it] } }
     Column {
         FilterField(ui, q) { q = it }
@@ -429,7 +431,7 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
             // One header item: the reorder callback counts track rows from index 1.
             item(key = "header") {
                 Column {
-                    ScreenTitle(p.name, "${tracks.size} tracks · ${formatTime(tracks.sumOf { it.duration })}")
+                    ScreenTitle(p.name, "${counted.size} tracks · ${formatTime(counted.sumOf { it.duration })}")
                     Box(Modifier.padding(horizontal = 12.dp)) {
                         PlayButtons(ui, "playlist:$id", p.name, shownTracks, menu = { close ->
                             DropdownMenuItem({ Text("Rename") }, { close(); renaming = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
