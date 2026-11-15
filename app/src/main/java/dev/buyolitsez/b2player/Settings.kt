@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +73,9 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
                 if (missing.isEmpty()) "Everything liked is on the phone" else "${missing.size} tracks, ${formatSize(missing.distinctBy { it.path }.sumOf { it.size })}",
             ) {
                 if (missing.isNotEmpty()) {
-                    DownloadWorker.enqueue(ui.context, "liked-all", "Liked", missing, wifiOnly = p.autoWifiOnly.value)
+                    // A tap is a manual download: the Wi-Fi rule of manual downloads, and it replaces one still waiting under an older rule.
+                    DownloadWorker.cancel(ui.context, "liked-all", missing)
+                    DownloadWorker.enqueue(ui.context, "liked-all", "Liked", missing, wifiOnly = p.manualWifiOnly.value)
                     ui.toast("Downloading liked tracks")
                 }
             }
@@ -307,7 +310,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
                     Row {
                         Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (w.state == WorkInfo.State.ENQUEUED) "waiting for network" else "$done / $all", color = Muted, style = MaterialTheme.typography.bodySmall)
+                        Text(if (w.state != WorkInfo.State.ENQUEUED) "$done / $all" else if (w.constraints.requiredNetworkType == NetworkType.UNMETERED) "waiting for Wi-Fi" else "waiting", color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
                     LinearProgressIndicator({ if (all > 0) done / all.toFloat() else 0f }, Modifier.fillMaxWidth().padding(top = 4.dp))
                 }

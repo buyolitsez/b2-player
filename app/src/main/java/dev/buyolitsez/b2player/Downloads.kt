@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 /**
  * Downloads whole files for offline listening into Library.offlineDir, as a foreground service with the progress
@@ -55,10 +56,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             paths.forEachIndexed { i, p ->
                 setProgress(workDataOf("title" to title, "done" to first + i, "total" to all))
                 val dst = app.library.offlineFile(p)
-                if (!dst.exists()) {
+                if (!dst.exists() && !isStopped) {
                     try {
                         // Steps of 10 %: each step copies the map of every queued path and the rings animate between steps.
                         app.b2.download(Library.MUSIC + p, dst, resume = true) { f ->
+                            // A cancelled worker must stop writing: a new one may continue the same part file.
+                            if (isStopped) throw IOException("Stopped")
                             val pct = (f * 10).toInt() / 10f
                             if (_progress.value[p] != pct) _progress.update { it + (p to pct) }
                             // The system drops notification updates that come too often.
