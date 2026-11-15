@@ -22,6 +22,7 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         append(" | ").append(t.album.title); t.album.year?.let { append(" (").append(it).append(')') }
         append(" | ").append(genre(t.album)).append(" | ").append(formatTime(t.duration))
         if (host.isLiked(t)) append(" | liked")
+        host.rating(t.album)?.let { append(" | album rated ").append(formatRating(it)) }
     }
 
     private fun line(a: Album) = buildString {
@@ -30,6 +31,7 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         append(" | ").append(genre(a)).append(" | ").append(a.tracks.size).append(" tracks")
         val liked = a.tracks.count { host.isLiked(it) }
         if (liked > 0) append(", ").append(liked).append(" liked")
+        host.rating(a)?.let { append(" | rated ").append(formatRating(it)) }
     }
 
     /** Tracks named by handles; an album handle stands for all its tracks. */
@@ -83,11 +85,14 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
     fun searchAlbums(a: JsonNode): String {
         val text = a.str("text"); val artist = a.str("artist"); val genre = a.str("genre")
         val from = a.path("year_from").asInt(0); val to = a.path("year_to").asInt(9999)
+        val rated = a.path("rated").asText("any"); val minRating = a.path("min_rating").asDouble(0.0)
         val limit = a.path("limit").asInt(100).coerceIn(1, 400)
         val found = cat.albums.filter { al ->
+            val r = host.rating(al)
             matches(al.artist, artist) && matches(genre(al), genre) && (text.isNullOrBlank() || searchFold(text) in al.searchKey) &&
-                (al.year ?: 0) in from..to
-        }
+                (al.year ?: 0) in from..to && (r ?: 0.0) >= minRating &&
+                when (rated) { "rated" -> r != null; "unrated" -> r == null; else -> true }
+        }.let { list -> if (a.path("sort").asText() == "rating") list.sortedByDescending { host.rating(it) ?: 0.0 } else list }
         return result(found.size, found.take(limit).map { line(it) })
     }
 
@@ -150,10 +155,20 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         val plays = host.history().filter { it.time >= since && it.time < end }.mapNotNull { p -> cat.byId[p.trackId]?.let { it to p.time } }
         if (plays.isEmpty()) return "No plays in this period"
         val groups = plays.groupBy { (t, _) ->
-            when (by) { "artist" -> t.artist; "album" -> handle(t.album) + " | " + t.album.artist + " — " + t.album.title; else -> line(t) }
+            when (by) { "artist" -> t.artist; "album" -> handle(t.album) + " | " + t.album.artist + " — " + t.album.title + (host.rating(t.album)?.let { " | rated " + formatRating(it) }.orEmpty()); else -> line(t) }
         }.map { (k, v) -> Triple(k, v.size, v.maxOf { it.second }) }
         val sorted = if (a.path("sort").asText() == "oldest") groups.sortedBy { it.third } else groups.sortedByDescending { it.second }
         return "${plays.size} plays\n" + sorted.take(limit).joinToString("\n") { (k, n, last) -> "$k | $n plays, last ${day.format(Date(last))}" }
+    }
+
+    fun setRating(a: JsonNode): Any {
+        val h = a.path("album").asText("").trim()
+        val album = h.drop(1).toIntOrNull()?.let { n -> if (h.startsWith("a")) cat.albums.getOrNull(n) else cat.tracks.getOrNull(n)?.album }
+            ?: return "No such album"
+        val rating = a.path("rating").asInt(0).takeIf { it in 1..10 } ?: return "The rating is a whole number from 1 to 10"
+        if (host.rating(album) == rating.toDouble()) return "It is rated $rating already"
+        val title = "Rate ${album.artist} — ${album.title}${album.year?.let { " ($it)" }.orEmpty()}: $rating"
+        return Change(title, emptyList()) { host.setRating(album, rating); "Done: $title" }
     }
 
     private fun count(n: Int) = if (n == 1) "1 track" else "$n tracks"
@@ -169,6 +184,7 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
         "create_playlist" -> createPlaylist(input)
         "add_to_playlist" -> addToPlaylist(input)
         "listening_stats" -> stats(input)
+        "set_rating" -> setRating(input)
         else -> "Unknown tool $name"
     }
 
@@ -185,11 +201,14 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
                     "playlist": {"type": "string", "description": "Only tracks of this playlist (exact name)"},
                     "liked_only": {"type": "boolean", "description": "Only when the user asks for liked tracks"},
                     "limit": {"type": "integer", "description": "Default 100, max 400"}}}"""),
-            Triple("search_albums", "Find albums. Filters are optional substrings.",
+            Triple("search_albums", "Find albums. Filters are optional substrings. Rated albums show the user's rating.",
                 """{"type": "object", "properties": {
                     "text": {"type": "string", "description": "Matches album title or artist"},
                     "artist": {"type": "string"}, "genre": {"type": "string"},
                     "year_from": {"type": "integer"}, "year_to": {"type": "integer"},
+                    "rated": {"type": "string", "enum": ["any", "rated", "unrated"], "description": "Default any"},
+                    "min_rating": {"type": "number", "description": "Only albums rated at least this"},
+                    "sort": {"type": "string", "enum": ["library", "rating"], "description": "rating: highest rated first"},
                     "limit": {"type": "integer", "description": "Default 100, max 400"}}}"""),
             Triple("play", "Play tracks or albums. mode replace (default) replaces the queue and starts playing; next inserts after the current track; end appends to the queue.",
                 """{"type": "object", "properties": {$ITEMS,
@@ -209,6 +228,10 @@ class AssistantTools(private val host: AssistantHost, val cat: Catalog) {
                     "since": {"type": "string"}, "until": {"type": "string"},
                     "sort": {"type": "string", "enum": ["plays", "oldest"]},
                     "limit": {"type": "integer", "description": "Default 50, max 300"}}}"""),
+            Triple("set_rating", "Rate an album 1 to 10, when the user gives it a score. The user confirms first. The rating goes to the user's listening diary.",
+                """{"type": "object", "properties": {
+                    "album": {"type": "string", "description": "Album handle (a…), or a track handle for its album"},
+                    "rating": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["album", "rating"]}"""),
         )
     }
 }

@@ -73,3 +73,6 @@ fun formatTime(sec: Double): String {
     val s = sec.toLong()
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }
+
+/** 7.0 as "7", 7.5 as "7.5". */
+fun formatRating(r: Double) = if (r % 1 == 0.0) r.toInt().toString() else r.toString()

@@ -94,6 +94,8 @@ class Assistant(private val ui: Ui) {
         override fun createPlaylist(name: String, tracks: List<Track>) { ui.createPlaylist(name, tracks) }
         override fun addToPlaylist(p: Playlist, tracks: List<Track>) = ui.addToPlaylist(p, tracks)
         override fun history() = ui.app.history.all()
+        override fun rating(a: Album) = ui.app.ratings.get(a.id)
+        override fun setRating(a: Album, rating: Int) = ui.setRating(a, rating)
         override fun reply(text: String, error: Boolean) { entries.add(ChatEntry.Reply(text, error)) }
         override suspend fun confirm(change: AssistantTools.Change): Boolean {
             val confirm = ChatEntry.Confirm(change)
