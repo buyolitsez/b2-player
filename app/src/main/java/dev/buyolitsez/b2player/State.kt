@@ -145,3 +145,32 @@ class Ratings(context: Context) {
 
     companion object { const val KEY = "state/ratings.json" }
 }
+
+/** Musicolet-style .m3u lines to catalog tracks: by file name and folder, then by "artist - title" from #EXTINF. */
+class M3uMatcher(cat: Catalog) {
+    private val byName = cat.tracks.groupBy { it.path.substringAfterLast('/').lowercase() }
+    private val byTags = cat.tracks.associateBy { "${it.artist}\u0000${it.title}".lowercase() }
+
+    /** The ids of the tracks found, and how many lines matched none. */
+    fun match(text: String): Pair<List<String>, Int> {
+        var extinf: String? = null
+        var missed = 0
+        val ids = ArrayList<String>()
+        for (raw in text.lineSequence()) {
+            val line = raw.trim().removePrefix("\ufeff")
+            if (line.isEmpty()) continue
+            if (line.startsWith("#EXTINF", true)) { extinf = line.substringAfter(',', ""); continue }
+            if (line.startsWith("#")) continue
+            val parts = line.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+            val file = parts.lastOrNull()?.lowercase()
+            val dir = parts.getOrNull(parts.size - 2)?.lowercase()
+            val candidates = file?.let { byName[it] }.orEmpty()
+            val t = candidates.firstOrNull { it.path.split('/').dropLast(1).lastOrNull()?.lowercase() == dir }
+                ?: candidates.firstOrNull()
+                ?: extinf?.let { e -> e.split(" - ", limit = 2).takeIf { it.size == 2 }?.let { byTags["${it[0].trim()}\u0000${it[1].trim()}".lowercase()] } }
+            if (t != null) ids.add(t.id) else missed++
+            extinf = null
+        }
+        return ids to missed
+    }
+}

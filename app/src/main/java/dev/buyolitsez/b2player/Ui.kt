@@ -460,31 +460,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun importM3u(uris: List<Uri>) = scope.launch {
         val cat = app.catalog.value ?: return@launch
         val result = withContext(Dispatchers.IO) {
-            val byName = cat.tracks.groupBy { it.path.substringAfterLast('/').lowercase() }
-            val byTags = cat.tracks.associateBy { "${it.artist}\u0000${it.title}".lowercase() }
+            val m3u = M3uMatcher(cat)
             uris.map { uri ->
                 val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                     if (it.moveToFirst()) it.getString(0) else null
                 }?.substringBeforeLast('.') ?: "Imported"
                 val text = context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
-                var extinf: String? = null
-                var missed = 0
-                val ids = ArrayList<String>()
-                for (raw in text.lineSequence()) {
-                    val line = raw.trim().removePrefix("﻿")
-                    if (line.isEmpty()) continue
-                    if (line.startsWith("#EXTINF", true)) { extinf = line.substringAfter(',', ""); continue }
-                    if (line.startsWith("#")) continue
-                    val parts = line.replace('\\', '/').split('/').filter { it.isNotEmpty() }
-                    val file = parts.lastOrNull()?.lowercase()
-                    val dir = parts.getOrNull(parts.size - 2)?.lowercase()
-                    val candidates = file?.let { byName[it] }.orEmpty()
-                    val t = candidates.firstOrNull { it.path.split('/').dropLast(1).lastOrNull()?.lowercase() == dir }
-                        ?: candidates.firstOrNull()
-                        ?: extinf?.let { e -> e.split(" - ", limit = 2).takeIf { it.size == 2 }?.let { byTags["${it[0].trim()}\u0000${it[1].trim()}".lowercase()] } }
-                    if (t != null) ids.add(t.id) else missed++
-                    extinf = null
-                }
+                val (ids, missed) = m3u.match(text)
                 app.playlists.create(name, ids.distinct())
                 Triple(name, ids.size, missed)
             }
@@ -523,19 +505,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun refreshCatalog() = scope.launch {
         if (!app.b2.settings.complete) return@launch
         status = UPDATING
-        val started = System.currentTimeMillis()
         status = try {
-            // A HEAD request tells whether the catalog changed; most launches skip the download.
-            val sha = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz", "HEAD").getHeaderField("x-bz-content-sha1") }
-            if (sha != null && sha == library.catalogSha && library.catalogFile.exists()) {
-                app.cachedCatalogLoad.join()
-                AppLog.i("catalog", "Unchanged, checked in ${System.currentTimeMillis() - started} ms")
-            } else {
-                val bytes = withContext(Dispatchers.IO) { app.b2.open("catalog.json.gz").inputStream.use { it.readBytes() } }
-                app.catalog.value = withContext(Dispatchers.Default) { Catalog.parse(bytes) }
-                withContext(Dispatchers.IO) { library.catalogFile.writeBytes(bytes); library.catalogSha = sha }
-                AppLog.i("catalog", "Loaded ${app.catalog.value?.albums?.size} albums, ${bytes.size / 1024} KB, ${System.currentTimeMillis() - started} ms")
-            }
+            app.refreshCatalog()
             version++
             null
         } catch (e: Exception) {
