@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Base64
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -79,15 +80,17 @@ class B2(private val context: Context) {
         return "${a.downloadUrl}/file/${settings.bucket}/${Uri.encode(key, "/")}" to a.token
     }
 
-    fun open(key: String, method: String = "GET"): HttpURLConnection {
+    /** With [from] > 0 asks for the rest of the file from that byte: the answer is 206, or 200 with the whole file. */
+    fun open(key: String, method: String = "GET", from: Long = 0): HttpURLConnection {
         repeat(2) { attempt ->
             val (url, token) = request(key)
             val c = URL(url).openConnection() as HttpURLConnection
             c.requestMethod = method
             c.setRequestProperty("Authorization", token)
+            if (from > 0) c.setRequestProperty("Range", "bytes=$from-")
             c.connectTimeout = 15000; c.readTimeout = 30000
             when (c.responseCode) {
-                200 -> return c
+                200, 206 -> return c
                 401 -> if (attempt == 0) { invalidate(); return@repeat }
             }
             AppLog.w("b2", "$method $key: HTTP ${c.responseCode}")
@@ -172,18 +175,22 @@ class B2(private val context: Context) {
         }
     }
 
-    /** [onProgress] gets the share of the file written so far, 0..1. */
-    fun download(key: String, dst: File, onProgress: (Float) -> Unit = {}) {
+    /**
+     * [onProgress] gets the share of the file written so far, 0..1. With [resume] a failed download keeps
+     * what it got and the next call continues from there.
+     */
+    fun download(key: String, dst: File, resume: Boolean = false, onProgress: (Float) -> Unit = {}) {
         dst.parentFile?.mkdirs()
-        // Own temp name per call: two downloads of the same file (a cover shown twice) must not collide.
-        val tmp = File(dst.parentFile, "${dst.name}.${java.util.UUID.randomUUID()}.part")
+        // Otherwise an own temp name per call: two downloads of the same file (a cover shown twice) must not collide.
+        val tmp = File(dst.parentFile, if (resume) "${dst.name}.part" else "${dst.name}.${java.util.UUID.randomUUID()}.part")
+        var done = false
         try {
-            val c = open(key)
-            val total = c.contentLengthLong
+            val c = open(key, from = tmp.length())
+            var written = if (c.responseCode == 206) tmp.length() else 0L
+            val total = written + c.contentLengthLong
             c.inputStream.use { input ->
-                tmp.outputStream().use { out ->
+                FileOutputStream(tmp, written > 0).use { out ->
                     val buf = ByteArray(64 shl 10)
-                    var written = 0L
                     while (true) {
                         val n = input.read(buf)
                         if (n < 0) break
@@ -194,8 +201,9 @@ class B2(private val context: Context) {
                 }
             }
             if (!tmp.renameTo(dst) && !dst.exists()) throw IOException("rename failed: $dst")
+            done = true
         } finally {
-            tmp.delete()
+            if (done || !resume) tmp.delete()
         }
     }
 
