@@ -116,6 +116,8 @@ class Updates(private val app: App) {
         }.onFailure { AppLog.w("update", "No foreground service", it) }
         return try {
             AppLog.i("update", "Downloading $version from ${partial?.second ?: 0}, attempt ${w.runAttemptCount + 1}")
+            // Sessions left by a download the app was killed in keep their bytes for days: drop them.
+            if (partial == null) installer.mySessions.forEach { runCatching { installer.abandonSession(it.sessionId) } }
             val id = partial?.first ?: installer.createSession(
                 PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply { setAppPackageName(app.packageName) }
             )

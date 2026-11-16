@@ -48,32 +48,29 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
     val sort = AlbumSort.entries.firstOrNull { it.name == ui.prefs.albumSort.value } ?: AlbumSort.Artist
-    val recent = sort == AlbumSort.Recent
     val days = ui.prefs.recentDays
     val minRating = ui.prefs.minRating
-    var periodMenu by remember { mutableStateOf(false) }
     var ratingMenu by remember { mutableStateOf(false) }
-    var customDays by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
     val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) {
-        val since = if (recent && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
-        val list = cat.albums.filter { it.added >= since }.filterBy(fq) { it.searchKey }
+        val since = since(days.value)
+        val list = cat.albums.filterBy(fq) { it.searchKey }
         when (sort) {
             AlbumSort.Artist -> list
-            AlbumSort.Recent -> list.sortedByDescending { it.added }
-            AlbumSort.Liked -> list.sortedWith(compareByDescending<Album> { a -> a.tracks.maxOf { ui.likeOrder(it) } }.thenByDescending { it.added })
+            AlbumSort.Recent -> list.filter { it.added * 1000 >= since }.sortedByDescending { it.added }
+            AlbumSort.Liked -> list.map { a -> a to a.tracks.maxOf { ui.likeOrder(it) } }.filter { since == 0L || it.second >= since }
+                .sortedWith(compareByDescending<Pair<Album, Long>> { it.second }.thenByDescending { it.first.added }).map { it.first }
             AlbumSort.Rating -> list.map { it to ui.rating(it) }
                 .filter { (_, r) -> when (minRating.value) { 0 -> true; -1 -> r == null; else -> r != null && r >= minRating.value } }
                 .sortedByDescending { it.second ?: 0.0 }.map { it.first }
         }
     }
-    fun label(d: Int) = when (d) { 0 -> "All time"; 1 -> "1 day"; else -> "$d days" }
     fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
     Column {
         FilterField(ui, q) { q = it }
         AlbumGrid(ui, albums, header = {
-            // Sort order, the period of "Recently added", grid or list.
+            // Sort order, the period of "Recently added" or "Recently liked", grid or list.
             Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 SortButton(sort.title, AlbumSort.entries.map { it.title }) { ui.prefs.albumSort.set(AlbumSort.entries[it].name) }
                 Spacer(Modifier.weight(1f))
@@ -84,31 +81,43 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
                         listOf(0, 10, 9, 8, 7, 6, 5, -1).forEach { r -> DropdownMenuItem({ Text(ratingLabel(r)) }, { ratingMenu = false; minRating.set(r) }) }
                     }
                 }
-                if (recent) Box {
-                    Text(label(days.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { periodMenu = true }.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall, color = Muted)
-                    DropdownMenu(periodMenu, { periodMenu = false }, containerColor = Gray2) {
-                        listOf(1, 3, 7, 30, 365, 0).forEach { d -> DropdownMenuItem({ Text(label(d)) }, { periodMenu = false; days.set(d) }) }
-                        DropdownMenuItem({ Text("Custom…") }, { periodMenu = false; customDays = true })
-                    }
-                }
+                if (sort == AlbumSort.Recent || sort == AlbumSort.Liked) PeriodButton(ui)
                 SmallIcon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, size = 18.dp) {
                     ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value)
                 }
             }
         })
     }
-    if (customDays) {
+}
+
+/** Epoch ms from which "Recently added" and "Recently liked" keep things, for a period of [days]; 0 keeps all. */
+private fun since(days: Int) = if (days > 0) System.currentTimeMillis() - days * 86_400_000L else 0L
+
+/** The period of "Recently added" and "Recently liked", shared by albums and tracks. */
+@UnstableApi
+@Composable
+fun PeriodButton(ui: Ui) = Box {
+    val days = ui.prefs.recentDays
+    var open by remember { mutableStateOf(false) }
+    var custom by remember { mutableStateOf(false) }
+    fun label(d: Int) = when (d) { 0 -> "All time"; 1 -> "1 day"; else -> "$d days" }
+    Text(label(days.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { open = true }.padding(8.dp),
+        style = MaterialTheme.typography.bodySmall, color = Muted)
+    DropdownMenu(open, { open = false }, containerColor = Gray2) {
+        listOf(1, 3, 7, 30, 365, 0).forEach { d -> DropdownMenuItem({ Text(label(d)) }, { open = false; days.set(d) }) }
+        DropdownMenuItem({ Text("Custom…") }, { open = false; custom = true })
+    }
+    if (custom) {
         var text by remember { mutableStateOf("") }
         val n = text.toIntOrNull()?.takeIf { it > 0 }
         AlertDialog(
-            { customDays = false }, containerColor = Gray2, title = { Text("Added in the last") },
+            { custom = false }, containerColor = Gray2, title = { Text("In the last") },
             text = {
                 OutlinedTextField(text, { text = it.filter(Char::isDigit).take(5) }, singleLine = true, suffix = { Text("days") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             },
-            confirmButton = { TextButton({ days.set(n!!); customDays = false }, enabled = n != null) { Text("OK") } },
-            dismissButton = { TextButton({ customDays = false }) { Text("Cancel") } },
+            confirmButton = { TextButton({ days.set(n!!); custom = false }, enabled = n != null) { Text("OK") } },
+            dismissButton = { TextButton({ custom = false }) { Text("Cancel") } },
         )
     }
 }
@@ -132,13 +141,16 @@ fun TracksTab(ui: Ui, cat: Catalog) {
     val sort = TrackSort.entries.firstOrNull { it.name == ui.prefs.trackSort.value } ?: TrackSort.Artist
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val tracks = remember(cat, sort, fq, ui.version) {
+    val days = ui.prefs.recentDays.value
+    val tracks = remember(cat, sort, days, fq, ui.version) {
+        val since = since(days)
         val list = cat.tracks.filterBy(fq) { it.searchKey }
         when (sort) {
             TrackSort.Artist -> list
-            TrackSort.Recent -> list.sortedByDescending { it.album.added }
+            TrackSort.Recent -> list.filter { it.album.added * 1000 >= since }.sortedByDescending { it.album.added }
             // Tracks liked together keep their album order.
-            TrackSort.Liked -> list.sortedWith(compareByDescending<Track> { ui.likeOrder(it) }.thenByDescending { it.album.added })
+            TrackSort.Liked -> list.map { it to ui.likeOrder(it) }.filter { since == 0L || it.second >= since }
+                .sortedWith(compareByDescending<Pair<Track, Long>> { it.second }.thenByDescending { it.first.album.added }).map { it.first }
         }
     }
     Column {
@@ -149,6 +161,7 @@ fun TracksTab(ui: Ui, cat: Catalog) {
                     SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
                     Spacer(Modifier.weight(1f))
                     Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    if (sort != TrackSort.Artist) PeriodButton(ui)
                 }
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
