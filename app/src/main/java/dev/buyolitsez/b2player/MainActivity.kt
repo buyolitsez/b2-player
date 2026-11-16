@@ -374,10 +374,15 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                             }.horizontalScroll(chips).padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         ) { LibrarySection.entries.forEach { s -> Pill(s.name, active = s == ui.section) { ui.showSection(s) } } }
-                                        // The whole library, in order or shuffled.
-                                        SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 24.dp) { ui.play(c.tracks, shuffled = true) }
+                                        // What the open view lists, with its sort and period, in order or shuffled.
+                                        fun shown() = when (ui.section) {
+                                            LibrarySection.Albums -> sortAlbums(ui, c.albums).flatMap { it.tracks }
+                                            LibrarySection.Tracks -> sortTracks(ui, c.tracks)
+                                            else -> c.tracks
+                                        }
+                                        SmallIcon(Icons.Default.Shuffle, MaterialTheme.colorScheme.onSurface, 24.dp) { ui.play(shown(), shuffled = true) }
                                         Box(
-                                            Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(c.tracks) },
+                                            Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.play(shown()) },
                                             Alignment.Center,
                                         ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
                                     }
