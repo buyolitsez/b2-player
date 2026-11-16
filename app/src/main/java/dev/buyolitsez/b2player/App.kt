@@ -71,6 +71,8 @@ class Prefs(context: Context) {
     val albumGrid = Bool("albumGrid", true)
     /** An [AlbumSort] name. */
     val albumSort = Str("albumSort", "Artist")
+    /** A [TrackSort] name. */
+    val trackSort = Str("trackSort", "Artist")
     /** "By rating" shows albums rated at least this; 0 shows all, -1 only the unrated ones. */
     val minRating = Num("minRating", 0)
     /** "Recently added" shows albums added in this many days; 0 shows all. */
@@ -148,7 +150,8 @@ class App : Application() {
     fun setLiked(tracks: List<Track>, liked: Boolean) {
         val changed = tracks.filter { library.isLiked(it) != liked }
         if (changed.isEmpty()) return
-        changed.forEach { library.setLiked(it, liked) }
+        val now = System.currentTimeMillis()
+        changed.forEach { library.setLiked(it, liked, now) }
         followLikes(changed, liked)
         likesChanged.value++
         scope.launch(Dispatchers.IO) { runCatching { syncLikes() }.onFailure { AppLog.w("sync", "Likes sync failed", it) } }

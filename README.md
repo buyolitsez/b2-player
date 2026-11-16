@@ -111,6 +111,8 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
 - Likes live in the bucket in `state/likes.json` as differences from the catalog's flags (`added`/`removed`).
   Every tap on the heart is uploaded right away; on start the app pulls the file from the bucket unless the
   phone has changes that aren't uploaded yet. That's why the phone's key needs write access.
+  `times` keeps when each track in `added` was liked (epoch ms), for "Recently liked"; cmus doesn't write it,
+  so the phone stamps likes from cmus when it first sees them and puts dropped times back.
 
 - Continue listening: on play, pause and track change the phone writes the track, the queue from it on
   (up to 200 tracks, in play order) and the position to `state/now-playing.json` (cmus does the same with

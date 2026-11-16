@@ -26,12 +26,14 @@ import kotlinx.coroutines.withContext
 enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), Search("Search") }
 
 /** What the Library tab lists. */
-enum class LibrarySection { Albums, Artists, Genres, Folders }
+enum class LibrarySection { Albums, Tracks, Artists, Genres, Folders }
 
 /** Which tracks the queue (see [Ui.setQueueFilter]) and the library (see [Ui.libraryFilter]) keep. */
 enum class LikeFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
 
-enum class AlbumSort(val title: String) { Artist("By artist"), Recent("Recently added"), Rating("By rating") }
+enum class AlbumSort(val title: String) { Artist("By artist"), Recent("Recently added"), Liked("Recently liked"), Rating("By rating") }
+
+enum class TrackSort(val title: String) { Artist("By artist"), Recent("Recently added"), Liked("Recently liked") }
 
 sealed interface Screen {
     data object Root : Screen
@@ -192,6 +194,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     }
 
     fun liked(t: Track): Boolean { version; return library.isLiked(t) }
+    /** For "Recently liked": when [t] was liked, 0 for a like with no time known, -1 when it isn't liked. */
+    fun likeOrder(t: Track): Long = library.likedAt(t) ?: if (library.isLiked(t)) 0 else -1
     fun downloaded(t: Track): Boolean { version; return library.isDownloaded(t) }
     fun rating(a: Album): Double? { version; return app.ratings.get(a.id) }
 

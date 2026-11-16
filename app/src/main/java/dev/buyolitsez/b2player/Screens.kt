@@ -51,7 +51,6 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     val recent = sort == AlbumSort.Recent
     val days = ui.prefs.recentDays
     val minRating = ui.prefs.minRating
-    var sortMenu by remember { mutableStateOf(false) }
     var periodMenu by remember { mutableStateOf(false) }
     var ratingMenu by remember { mutableStateOf(false) }
     var customDays by remember { mutableStateOf(false) }
@@ -63,6 +62,7 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
         when (sort) {
             AlbumSort.Artist -> list
             AlbumSort.Recent -> list.sortedByDescending { it.added }
+            AlbumSort.Liked -> list.sortedWith(compareByDescending<Album> { a -> a.tracks.maxOf { ui.likeOrder(it) } }.thenByDescending { it.added })
             AlbumSort.Rating -> list.map { it to ui.rating(it) }
                 .filter { (_, r) -> when (minRating.value) { 0 -> true; -1 -> r == null; else -> r != null && r >= minRating.value } }
                 .sortedByDescending { it.second ?: 0.0 }.map { it.first }
@@ -75,15 +75,7 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
         AlbumGrid(ui, albums, header = {
             // Sort order, the period of "Recently added", grid or list.
             Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box {
-                    Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { sortMenu = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp))
-                        Text(sort.title, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge)
-                    }
-                    DropdownMenu(sortMenu, { sortMenu = false }, containerColor = Gray2) {
-                        AlbumSort.entries.forEach { s -> DropdownMenuItem({ Text(s.title) }, { sortMenu = false; ui.prefs.albumSort.set(s.name) }) }
-                    }
-                }
+                SortButton(sort.title, AlbumSort.entries.map { it.title }) { ui.prefs.albumSort.set(AlbumSort.entries[it].name) }
                 Spacer(Modifier.weight(1f))
                 if (sort == AlbumSort.Rating) Box {
                     Text(ratingLabel(minRating.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { ratingMenu = true }.padding(8.dp),
@@ -118,6 +110,49 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
             confirmButton = { TextButton({ days.set(n!!); customDays = false }, enabled = n != null) { Text("OK") } },
             dismissButton = { TextButton({ customDays = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** The current sort order; a tap opens a menu of [options] and picks one by its index. */
+@Composable
+fun SortButton(title: String, options: List<String>, onPick: (Int) -> Unit) = Box {
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { open = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp))
+        Text(title, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge)
+    }
+    DropdownMenu(open, { open = false }, containerColor = Gray2) {
+        options.forEachIndexed { i, s -> DropdownMenuItem({ Text(s) }, { open = false; onPick(i) }) }
+    }
+}
+
+@UnstableApi
+@Composable
+fun TracksTab(ui: Ui, cat: Catalog) {
+    val sort = TrackSort.entries.firstOrNull { it.name == ui.prefs.trackSort.value } ?: TrackSort.Artist
+    var q by rememberSaveable { mutableStateOf("") }
+    val fq = remember(q) { Query(q) }
+    val tracks = remember(cat, sort, fq, ui.version) {
+        val list = cat.tracks.filterBy(fq) { it.searchKey }
+        when (sort) {
+            TrackSort.Artist -> list
+            TrackSort.Recent -> list.sortedByDescending { it.album.added }
+            // Tracks liked together keep their album order.
+            TrackSort.Liked -> list.sortedWith(compareByDescending<Track> { ui.likeOrder(it) }.thenByDescending { it.album.added })
+        }
+    }
+    Column {
+        FilterField(ui, q) { q = it }
+        LazyColumn(contentPadding = listPadding()) {
+            item {
+                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
+                    Spacer(Modifier.weight(1f))
+                    Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
+                }
+            }
+            itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
+        }
     }
 }
 
@@ -491,7 +526,7 @@ fun LikedScreen(ui: Ui, cat: Catalog) {
     val fq = remember(q) { Query(q) }
     val liked = remember(cat, ui.version, byRecent, fq) {
         val l = cat.tracks.filter { ui.library.isLiked(it) }.filterBy(fq) { it.searchKey }
-        if (byRecent) l.sortedByDescending { it.album.added } else l
+        if (byRecent) l.sortedWith(compareByDescending<Track> { ui.likeOrder(it) }.thenByDescending { it.album.added }) else l
     }
     Column {
         FilterField(ui, q) { q = it }
@@ -500,7 +535,7 @@ fun LikedScreen(ui: Ui, cat: Catalog) {
                 ScreenTitle("Liked", "${liked.size} tracks")
                 Box(Modifier.padding(horizontal = 12.dp)) {
                     PlayButtons(ui, "liked", "Liked", liked, menu = { close ->
-                        DropdownMenuItem({ Text(if (byRecent) "Sort A–Z" else "Sort by newest") }, { close(); byRecent = !byRecent },
+                        DropdownMenuItem({ Text(if (byRecent) "Sort A–Z" else "Recently liked first") }, { close(); byRecent = !byRecent },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) })
                     })
                 }
