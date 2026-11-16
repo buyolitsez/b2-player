@@ -288,6 +288,7 @@ fun TrackSheet(ui: Ui) {
             if (here != Screen.AlbumView(t.album)) MenuItem("Go to album", Icons.Default.Album, close) { ui.open(Screen.AlbumView(t.album), Tab.Library) }
             if (here != Screen.ArtistView(t.album.artist)) MenuItem("Go to artist", Icons.Default.Person, close) { ui.open(Screen.ArtistView(t.album.artist), Tab.Library) }
             if (here != Screen.FolderView(t.album.dir)) MenuItem("Show folder", Icons.Default.Folder, close) { ui.open(Screen.FolderView(t.album.dir), Tab.Library) }
+            MenuItem("Share", Icons.Default.Share, close) { ui.share(t) }
             MenuItem("Track info", Icons.Default.Info, close) { ui.trackInfo = t }
             MenuItem("Delete from bucket", Icons.Default.DeleteForever, close) { ui.deleting = Ui.DeleteRequest(t.title, listOf(t), false) }
         }
