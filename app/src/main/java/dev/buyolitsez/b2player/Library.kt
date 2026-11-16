@@ -14,7 +14,11 @@ import android.provider.Settings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceInputStream
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.Cache
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.ContentMetadata
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -197,6 +201,27 @@ class Library(private val context: Context, private val cache: Cache, private va
     fun isDownloaded(t: Track) = offlineFile(t.path).exists()
     fun isCached(t: Track) = t.size > 0 && cache.getCachedBytes(uriFor(t.path).toString(), 0, t.size) >= t.size
 
+    /**
+     * Copies the original from the player's cache to [dst] when it is cached whole (a liked track that was just
+     * played), so it isn't downloaded again. Returns false when it isn't, or the cache lost it meanwhile.
+     */
+    fun copyFromCache(path: String, dst: File): Boolean {
+        val key = uriFor(path).toString()
+        val size = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+        if (size <= 0 || !cache.isCached(key, 0, size)) return false
+        dst.parentFile?.mkdirs()
+        val tmp = File(dst.path + ".part")
+        return try {
+            // Without an upstream the source reads only the cache, and fails instead of going to the network.
+            DataSourceInputStream(CacheDataSource(cache, null), DataSpec(Uri.parse(key))).use { input ->
+                tmp.outputStream().use { input.copyTo(it, 64 shl 10) }
+            }
+            tmp.length() == size && tmp.renameTo(dst)
+        } catch (e: java.io.IOException) {
+            AppLog.w("download", "Copy from cache failed: $path", e); false
+        } finally { tmp.delete() }
+    }
+
     fun deleteDownload(t: Track) {
         val f = offlineFile(t.path)
         f.delete()
@@ -256,7 +281,7 @@ class Library(private val context: Context, private val cache: Cache, private va
         val sizes = c.tracks.associate { uriFor(it.path).toString() to it.size } +
             c.tracks.filter { it.liteSize > 0 }.associate { liteUriFor(it.path).toString() to it.liteSize }
         for (key in cache.keys.toList()) {
-            val cached = androidx.media3.datasource.cache.ContentMetadata.getContentLength(cache.getContentMetadata(key))
+            val cached = ContentMetadata.getContentLength(cache.getContentMetadata(key))
             val size = sizes[key] ?: continue
             if (cached > 0 && size > 0 && cached != size) { cache.removeResource(key); AppLog.i("cache", "Dropped stale $key") }
         }
