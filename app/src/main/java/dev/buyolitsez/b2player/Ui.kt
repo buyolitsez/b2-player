@@ -454,6 +454,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** Whether the download folder can be used, see [hasStorageAccess]; checked when the app comes back to the screen. */
     var storageAccess by mutableStateOf(hasStorageAccess(context))
 
+    /** See [ignoresBatteryOptimizations]; checked when the app comes back to the screen. */
+    var backgroundDownloads by mutableStateOf(ignoresBatteryOptimizations(context))
+
     /** On return to the app (all-files access may have been granted) and after the download folder changes. */
     fun moveDownloads() {
         storageAccess = hasStorageAccess(context)

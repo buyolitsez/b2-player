@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -324,3 +325,9 @@ fun storageAccessIntent(c: Context) = Intent(
     if (Build.VERSION.SDK_INT >= 30) Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
     Uri.parse("package:${c.packageName}"),
 )
+
+/** Exempt from battery optimization: downloads that start in the background still run with the screen off. */
+fun ignoresBatteryOptimizations(c: Context) = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
+
+/** The system dialog that grants [ignoresBatteryOptimizations]. */
+fun batteryExemptionIntent(c: Context) = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${c.packageName}"))
