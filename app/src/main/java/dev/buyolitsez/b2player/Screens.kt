@@ -108,7 +108,7 @@ fun PeriodButton(ui: Ui) = Box {
         DropdownMenuItem({ Text("Custom…") }, { open = false; custom = true })
     }
     if (custom) {
-        var text by remember { mutableStateOf("") }
+        var text by remember { mutableStateOf(days.value.takeIf { it > 0 }?.toString() ?: "") }
         val n = text.toIntOrNull()?.takeIf { it > 0 }
         AlertDialog(
             { custom = false }, containerColor = Gray2, title = { Text("In the last") },
@@ -164,6 +164,7 @@ fun TracksTab(ui: Ui, cat: Catalog) {
                     if (sort != TrackSort.Artist) PeriodButton(ui)
                 }
             }
+            if (tracks.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
             itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
         }
     }
@@ -178,6 +179,7 @@ fun ArtistsTab(ui: Ui, cat: Catalog) {
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
+            if (artists.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
             items(artists, key = { it.first }) { (name, albums) -> ArtistRow(ui, name, albums) }
         }
     }
@@ -414,7 +416,7 @@ fun PlaylistsTab(ui: Ui, cat: Catalog) {
                             Text(text, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         tile("History", Icons.Default.History) { ui.open(Screen.HistoryView) }
-                        tile("Recently added", Icons.Default.NewReleases) {
+                        tile("Recently added", Icons.Default.LibraryAdd) {
                             ui.prefs.albumSort.set(AlbumSort.Recent.name); ui.showSection(LibrarySection.Albums); ui.stacks[Tab.Library] = listOf(Screen.Root); ui.tab = Tab.Library
                         }
                     }

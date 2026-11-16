@@ -562,7 +562,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     private fun syncInBackground(block: () -> Unit) = scope.launch {
         val err = withContext(Dispatchers.IO) { runCatching(block).exceptionOrNull() }
-        if (err != null) { status = SYNC_FAILED + err.message; AppLog.w("sync", "Sync failed", err) }
+        if (err is B2.ReadOnlyKey) AppLog.i("sync", "Read-only B2 key: local changes are not uploaded")
+        else if (err != null) { status = SYNC_FAILED + err.message; AppLog.w("sync", "Sync failed", err) }
         else if (status?.startsWith(SYNC_FAILED) == true) status = null
     }
 

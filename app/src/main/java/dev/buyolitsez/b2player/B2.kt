@@ -21,20 +21,20 @@ class B2(private val context: Context) {
 
     private class Auth(
         val apiUrl: String, val downloadUrl: String, val token: String, val accountId: String,
-        val bucketId: String?, val at: Long,
+        val bucketId: String?, val at: Long, val canWrite: Boolean,
     )
 
     private val prefs = context.getSharedPreferences("b2", Context.MODE_PRIVATE)
     // The token is kept across restarts too, so a launch does not wait for b2_authorize_account.
     @Volatile private var auth: Auth? = prefs.getString("auth", null)?.let { runCatching { JSONObject(it) }.getOrNull() }?.let {
         Auth(it.getString("apiUrl"), it.getString("downloadUrl"), it.getString("token"), it.getString("accountId"),
-            it.optString("bucketId").takeIf { b -> b.isNotEmpty() }, it.getLong("at"))
+            it.optString("bucketId").takeIf { b -> b.isNotEmpty() }, it.getLong("at"), it.optBoolean("canWrite", true))
     }
         set(v) {
             field = v
             prefs.edit().putString("auth", v?.let {
                 JSONObject().put("apiUrl", it.apiUrl).put("downloadUrl", it.downloadUrl).put("token", it.token)
-                    .put("accountId", it.accountId).put("bucketId", it.bucketId ?: "").put("at", it.at).toString()
+                    .put("accountId", it.accountId).put("bucketId", it.bucketId ?: "").put("at", it.at).put("canWrite", it.canWrite).toString()
             }).apply()
         }
 
@@ -66,9 +66,11 @@ class B2(private val context: Context) {
         val j = JSONObject(c.inputStream.bufferedReader().readText())
         val allowed = j.optJSONObject("allowed")
         val bucketId = allowed?.optString("bucketId")?.takeIf { it.isNotEmpty() && it != "null" }
+        val caps = allowed?.optJSONArray("capabilities")
+        val canWrite = caps == null || (0 until caps.length()).any { caps.getString(it) == "writeFiles" }
         return Auth(
             j.getString("apiUrl"), j.getString("downloadUrl"), j.getString("authorizationToken"),
-            j.getString("accountId"), bucketId, System.currentTimeMillis(),
+            j.getString("accountId"), bucketId, System.currentTimeMillis(), canWrite,
         ).also { auth = it }
     }
 
@@ -105,7 +107,7 @@ class B2(private val context: Context) {
         c.setRequestProperty("Authorization", token)
         c.connectTimeout = 15000; c.readTimeout = 30000
         c.outputStream.use { it.write(body.toString().toByteArray()) }
-        if (c.responseCode == 401) throw Unauthorized("POST $url: HTTP 401")
+        if (c.responseCode == 401) throw Unauthorized("POST $url: HTTP 401 ${c.errorStream?.bufferedReader()?.readText().orEmpty()}")
         if (c.responseCode != 200) {
             throw IOException("POST $url: HTTP ${c.responseCode} ${c.errorStream?.bufferedReader()?.readText().orEmpty()}")
         }
@@ -117,9 +119,12 @@ class B2(private val context: Context) {
         JSONObject().put("accountId", a.accountId).put("bucketName", settings.bucket),
     ).getJSONArray("buckets").getJSONObject(0).getString("bucketId")
 
+    /** Auth for a change in the bucket; a key without writeFiles fails here instead of with 401 from B2. */
+    private fun writeAuth(): Auth = auth().also { if (!it.canWrite) throw ReadOnlyKey() }
+
     /** Uploads a small file (needs a key with writeFiles) and returns its fileId. */
     fun upload(key: String, bytes: ByteArray, contentType: String): String = reauthorizing {
-        val a = auth()
+        val a = writeAuth()
         val up = post("${a.apiUrl}/b2api/v2/b2_get_upload_url", a.token, JSONObject().put("bucketId", bucketId(a)))
         val c = URL(up.getString("uploadUrl")).openConnection() as HttpURLConnection
         c.requestMethod = "POST"; c.doOutput = true
@@ -136,13 +141,13 @@ class B2(private val context: Context) {
 
     /** Removes one stored version of a file (the bucket keeps old versions otherwise). */
     fun deleteVersion(key: String, fileId: String) = reauthorizing {
-        val a = auth()
+        val a = writeAuth()
         post("${a.apiUrl}/b2api/v2/b2_delete_file_version", a.token, JSONObject().put("fileName", key).put("fileId", fileId))
     }
 
     /** Hides a file: it is no longer listed or served, and the bucket's lifecycle rule removes it later. */
     fun hide(key: String) = reauthorizing {
-        val a = auth()
+        val a = writeAuth()
         post("${a.apiUrl}/b2api/v2/b2_hide_file", a.token, JSONObject().put("bucketId", bucketId(a)).put("fileName", key))
     }
 
@@ -208,6 +213,9 @@ class B2(private val context: Context) {
     }
 
     private class Unauthorized(message: String) : IOException(message)
+
+    /** The key can read but not write: changes stay on this device. */
+    class ReadOnlyKey : IOException("B2 key is read-only")
 
     /** The saved token can be revoked early; on 401 sign in again and retry once. */
     private fun <T> reauthorizing(block: () -> T): T =

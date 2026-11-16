@@ -214,6 +214,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     }
     val haze = rememberHazeState()
     val tintHeight = with(LocalDensity.current) { 700.dp.toPx() }
+    val barFade = with(LocalDensity.current) { 20.dp.toPx() }
     // Screens that have a search field above their list.
     val hasFilter = when (screen) {
         Screen.Root -> ui.tab != Tab.Search
@@ -307,7 +308,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         backgroundColor = UiColor.Black
                         tints = listOf(HazeTint(UiColor(0xC7080A09)))
                         fallbackTint = HazeTint(UiColor(0xF0080A09))
-                        mask = Brush.verticalGradient(0f to UiColor.Transparent, 0.14f to UiColor.Black)
+                        // Fades in over the top padding only, so a taller panel (with the Resume banner) is solid under its content.
+                        mask = Brush.verticalGradient(listOf(UiColor.Transparent, UiColor.Black), endY = barFade)
                     }.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(top = 20.dp)
                 ) {
                     ResumeBanner(ui, cat)

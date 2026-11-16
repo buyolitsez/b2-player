@@ -325,7 +325,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
         LazyColumn(contentPadding = listPadding()) {
             item {
                 Text(
-                    "Downloaded: ${formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
+                    "Downloaded: ${if (downloaded == null) "…" else formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
                     Modifier.padding(20.dp, 8.dp), style = MaterialTheme.typography.bodyMedium,
                 )
                 if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 20.dp)) {
