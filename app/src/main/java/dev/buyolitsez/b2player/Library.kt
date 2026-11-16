@@ -3,6 +3,7 @@ package dev.buyolitsez.b2player
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -124,11 +125,26 @@ class Library(private val context: Context, private val cache: Cache, private va
     /** Guards the like sets; the network part of a sync runs outside it so taps never wait for it. */
     private val likesLock = Any()
 
-    fun setLiked(t: Track, liked: Boolean) = synchronized(likesLock) {
+    /**
+     * When each track in "liked+" was liked (epoch ms), synced as "times" in likes.json. Likes older than
+     * this and the catalog's own likes have none.
+     */
+    @Volatile private var likeTimes: Map<String, Long> = prefs.getString("likeTimes", null)?.let { times(JSONObject(it)) } ?: emptyMap()
+    fun likedAt(t: Track) = likeTimes[t.id]
+
+    private fun times(j: JSONObject?) = j?.keys()?.asSequence()?.associateWith { j.getLong(it) } ?: emptyMap()
+    private fun saveTimes(e: SharedPreferences.Editor, times: Map<String, Long>) {
+        likeTimes = times
+        e.putString("likeTimes", JSONObject(times).toString())
+    }
+
+    fun setLiked(t: Track, liked: Boolean, at: Long) = synchronized(likesLock) {
         val plus = set("liked+").toMutableSet(); val minus = set("liked-").toMutableSet()
         if (liked) { minus.remove(t.id); if (!t.likedInCatalog) plus.add(t.id) }
         else { plus.remove(t.id); if (t.likedInCatalog) minus.add(t.id) }
-        prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus).apply()
+        val e = prefs.edit().putStringSet("liked+", plus).putStringSet("liked-", minus)
+        saveTimes(e, if (t.id in plus) likeTimes + (t.id to at) else likeTimes - t.id)
+        e.apply()
     }
 
     /**
@@ -139,14 +155,23 @@ class Library(private val context: Context, private val cache: Cache, private va
     @Synchronized
     fun syncLikes(b2: B2): Set<String> {
         val (plus, minus) = synchronized(likesLock) { set("liked+").toSet() to set("liked-").toSet() }
+        val localTimes = likeTimes
         val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
         fun arr(k: String) = j?.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-        val remotePlus = arr("added"); val remoteMinus = arr("removed")
+        val remotePlus = arr("added"); val remoteMinus = arr("removed"); val remoteTimes = times(j?.optJSONObject("times"))
         fun merge(remote: Set<String>, base: Set<String>, local: Set<String>) = remote + (local - base) - (base - local)
         val newPlus = merge(remotePlus, set("synced+").toSet(), plus)
         val newMinus = merge(remoteMinus, set("synced-").toSet(), minus)
-        if (newPlus != remotePlus || newMinus != remoteMinus) {
+        // cmus writes no times, and a writer that doesn't know them drops them: likes new since the last
+        // sync get the time they are seen (on the first sync all are old), and known times are put back.
+        val now = System.currentTimeMillis()
+        val fresh = if (prefs.contains("synced+")) newPlus - set("synced+") else emptySet()
+        val newTimes = newPlus.mapNotNull { id ->
+            (maxOf(remoteTimes[id] ?: 0, localTimes[id] ?: 0).takeIf { it > 0 } ?: now.takeIf { id in fresh })?.let { id to it }
+        }.toMap()
+        if (newPlus != remotePlus || newMinus != remoteMinus || newTimes != remoteTimes) {
             val out = JSONObject().put("version", 1).put("added", JSONArray(newPlus.sorted())).put("removed", JSONArray(newMinus.sorted()))
+                .put("times", JSONObject(newTimes.toSortedMap()))
             b2.upload(LIKES, out.toString(1).toByteArray(), "application/json")
         }
         return synchronized(likesLock) {
@@ -154,8 +179,10 @@ class Library(private val context: Context, private val cache: Cache, private va
             val localPlus = merge(newPlus, plus, set("liked+")); val localMinus = merge(newMinus, minus, set("liked-"))
             fun diff(a: Set<String>, b: Set<String>) = (a - b) + (b - a)
             val changed = diff(localPlus, set("liked+")) + diff(localMinus, set("liked-"))
-            prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
-                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus).apply()
+            val e = prefs.edit().putStringSet("liked+", localPlus).putStringSet("liked-", localMinus)
+                .putStringSet("synced+", newPlus).putStringSet("synced-", newMinus)
+            saveTimes(e, (likeTimes + newTimes).filterKeys { it in localPlus })
+            e.apply()
             changed
         }
     }

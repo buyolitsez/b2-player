@@ -381,6 +381,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                     }
                                     when (ui.section) {
                                         LibrarySection.Albums -> AlbumsTab(ui, c)
+                                        LibrarySection.Tracks -> TracksTab(ui, c)
                                         LibrarySection.Artists -> ArtistsTab(ui, c)
                                         LibrarySection.Genres -> GenresTab(ui, c)
                                         LibrarySection.Folders -> FolderScreen(ui, c, "")
