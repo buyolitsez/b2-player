@@ -3,6 +3,7 @@ package dev.buyolitsez.b2player
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -101,7 +102,16 @@ private fun SyncedLyrics(ui: Ui, lines: List<LyricLine>, translation: List<Strin
     LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(200) } }
     val current = lines.indexOfLast { it.ms <= pos }
     val state = rememberLazyListState()
-    LaunchedEffect(current) { if (current > 2) state.animateScrollToItem(current - 2 + if (note != null) 1 else 0) }
+    val top = if (note != null) 1 else 0
+    // Follows the current line until the user scrolls by hand, and again once that line is back on screen.
+    var follow by remember(lines) { mutableStateOf(true) }
+    val dragged by state.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(dragged) { if (dragged) follow = false }
+    LaunchedEffect(current, top) {
+        snapshotFlow { !state.isScrollInProgress && state.layoutInfo.visibleItemsInfo.any { it.index == current + top } }
+            .collect { if (it) follow = true }
+    }
+    LaunchedEffect(current) { if (follow && current > 2) state.animateScrollToItem(current - 2 + top) }
     LazyColumn(state = state, contentPadding = PaddingValues(16.dp)) {
         note?.let { item { Text(it, Modifier.padding(bottom = 8.dp, end = 40.dp), style = MaterialTheme.typography.bodySmall, color = Muted) } }
         itemsIndexed(lines) { i, line ->
