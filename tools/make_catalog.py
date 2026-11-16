@@ -305,6 +305,17 @@ def favourite_index(fav_root):
     return by_name_size, by_tag
 
 
+def write_lyrics(path, lyrics):
+    """Writes only a changed file: a new mtime makes rclone copy every lyrics file to the bucket again."""
+    text = json.dumps(lyrics, ensure_ascii=False)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            if fh.read() == text:
+                return
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 def keep_bucket_only(out_albums, root, previous, bucket_files, lyrics_dir, old_lyrics):
     """Add the tracks of the previous catalog whose file is no longer in the
     library but is still in the bucket."""
@@ -335,8 +346,7 @@ def keep_bucket_only(out_albums, root, previous, bucket_files, lyrics_dir, old_l
             if os.path.exists(lyr_file):
                 with open(lyr_file, encoding="utf-8") as fh:
                     lyrics.update(json.load(fh))
-            with open(lyr_file, "w", encoding="utf-8") as fh:
-                json.dump(lyrics, fh, ensure_ascii=False)
+            write_lyrics(lyr_file, lyrics)
     print(f"kept from the bucket: {kept} tracks")
 
 
@@ -478,8 +488,7 @@ def main():
             with open(lyr_file, encoding="utf-8") as fh:
                 old_lyrics[aid] = json.load(fh)
         if lyrics:
-            with open(lyr_file, "w", encoding="utf-8") as fh:
-                json.dump(lyrics, fh, ensure_ascii=False)
+            write_lyrics(lyr_file, lyrics)
         elif os.path.exists(lyr_file):
             os.remove(lyr_file)
         o = {"id": aid, "dir": al["dir"], "title": title, "artist": artist or "Unknown",
