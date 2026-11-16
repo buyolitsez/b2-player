@@ -6,18 +6,22 @@ For every file of the catalog whose bitrate is at least --min-kbps (lossless and
 light are skipped: their copy would save little, and the app plays the original.
 A CUE image becomes one Opus file too, so the track start times stay valid.
 
-The source is the file in --music, or, for tracks that are only in the bucket,
-the same file through the bucket mount (--mount). OUT/lite-sources.json keeps
-the size of the source of each copy, so a file changed since (tags rewritten)
-is encoded again. publish-catalog.sh uploads the copies to lite/ in the bucket
-and, with --mark, gives the catalog's tracks the size of their copy as "lite".
+The source is the file in --music, or, for tracks that are only in the bucket
+(or on a computer without the library), the same file through the bucket mount
+(--mount). A file whose copy is in the bucket (--lite-files) or in OUT/lite and
+is newer than the file is skipped, so a file changed since (tags rewritten) is
+encoded again, and any computer can continue the work. publish-catalog.sh moves
+the copies to lite/ in the bucket and, with --mark, gives the catalog's tracks
+the size of their copy as "lite".
 
-  tools/make_lite.py                      # the whole catalog
-  tools/make_lite.py "rock/Swans" ...     # only these folders
-  tools/make_lite.py --mark lite-files.txt   # mark tracks; the list is rclone lsf --format sp of lite/
+  LIST: rclone lsf -R --files-only --format tsp --separator $'\t' <remote>/lite > lite-files.txt
+  tools/make_lite.py --lite-files lite-files.txt                  # the whole catalog
+  tools/make_lite.py --lite-files lite-files.txt "rock/Swans" ... # only these folders
+  tools/make_lite.py --mark lite-files.txt                        # mark the catalog's tracks
 """
 import argparse
 import concurrent.futures
+import datetime
 import gzip
 import json
 import os
@@ -26,7 +30,7 @@ import sys
 
 
 def files_of(catalog, only):
-    """path -> (size, duration in seconds) of each file of the catalog; CUE tracks add up."""
+    """path -> (size, duration in seconds, mtime) of each file of the catalog; CUE tracks add up."""
     with gzip.open(catalog, "rt", encoding="utf-8") as fh:
         cat = json.load(fh)
     files = {}
@@ -35,17 +39,24 @@ def files_of(catalog, only):
             p = t["path"]
             if only and not any(p.startswith(o.rstrip("/") + "/") for o in only):
                 continue
-            size, dur = files.get(p, (t.get("size", 0), 0))
-            files[p] = (size, dur + (t.get("duration") or 0))
+            size, dur, mtime = files.get(p, (t.get("size", 0), 0, t.get("mtime", 0)))
+            files[p] = (size, dur + (t.get("duration") or 0), mtime)
     return files
 
 
-def mark(catalog, lite_files):
+def read_list(lite_files):
+    """path -> (size, mtime) from an rclone lsf --format tsp listing of lite/."""
     lite = {}
-    with open(lite_files, encoding="utf-8") as fh:
-        for line in fh.read().splitlines():
-            size, _, path = line.partition("\t")
-            lite[path] = int(size)
+    if lite_files:
+        with open(lite_files, encoding="utf-8") as fh:
+            for line in fh.read().splitlines():
+                t, size, path = line.split("\t", 2)
+                lite[path] = (int(size), datetime.datetime.strptime(t, "%Y-%m-%d %H:%M:%S").timestamp())
+    return lite
+
+
+def mark(catalog, lite_files):
+    lite = {path: size for path, (size, _) in read_list(lite_files).items()}
     with gzip.open(catalog, "rt", encoding="utf-8") as fh:
         cat = json.load(fh)
     n = 0
@@ -85,26 +96,22 @@ def main():
     ap.add_argument("--out", default=f"{home}/.cache/b2-player")
     ap.add_argument("--min-kbps", type=int, default=256, help="lighter files are not copied")
     ap.add_argument("--kbps", type=int, default=128)
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count())
+    ap.add_argument("-j", "--jobs", type=int, default=4, help="the computer that holds the library overheats on all cores")
+    ap.add_argument("--lite-files", help="the copies already in the bucket, see LIST above")
     ap.add_argument("--mark", metavar="LITE_FILES", help="only mark the catalog's tracks that have a copy in this list")
     ap.add_argument("only", nargs="*", help="limit to these folders of the library")
     a = ap.parse_args()
     if a.mark:
         return mark(a.catalog, a.mark)
 
-    state_file = os.path.join(a.out, "lite-sources.json")
-    try:
-        with open(state_file, encoding="utf-8") as fh:
-            done = json.load(fh)
-    except FileNotFoundError:
-        done = {}
+    in_bucket = read_list(a.lite_files)
     todo, light = [], 0
-    for path, (size, dur) in sorted(files_of(a.catalog, a.only).items()):
+    for path, (size, dur, mtime) in sorted(files_of(a.catalog, a.only).items()):
         if dur <= 0 or size * 8 / dur / 1000 < a.min_kbps:
             light += 1
             continue
         dst = os.path.join(a.out, "lite", path + ".opus")
-        if done.get(path) == size and os.path.exists(dst):
+        if in_bucket.get(path + ".opus", (0, 0))[1] > mtime or (os.path.exists(dst) and os.path.getmtime(dst) > mtime):
             continue
         local = os.path.join(a.music, path)
         src = local if os.path.exists(local) and os.path.getsize(local) == size else os.path.join(a.mount, path)
@@ -113,20 +120,14 @@ def main():
 
     failed = 0
     with concurrent.futures.ThreadPoolExecutor(a.jobs) as pool:
-        jobs = {pool.submit(encode, src, dst, a.kbps): (path, size) for path, size, src, dst in todo}
+        jobs = {pool.submit(encode, src, dst, a.kbps): path for path, size, src, dst in todo}
         for i, f in enumerate(concurrent.futures.as_completed(jobs), 1):
-            path, size = jobs[f]
             err = f.result()
             if err:
                 failed += 1
-                print(f"failed: {path}: {err[0]}", file=sys.stderr, flush=True)
-            else:
-                done[path] = size
+                print(f"failed: {jobs[f]}: {err[0]}", file=sys.stderr, flush=True)
             if i % 50 == 0 or i == len(todo):
                 print(f"{i}/{len(todo)}", flush=True)
-                with open(state_file + ".tmp", "w", encoding="utf-8") as fh:
-                    json.dump(done, fh, ensure_ascii=False)
-                os.replace(state_file + ".tmp", state_file)
     print(f"encoded {len(todo) - failed}, failed {failed}")
 
 
