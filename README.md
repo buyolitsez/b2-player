@@ -71,7 +71,9 @@ Lite streaming, for a slow network: `make_lite.py` encodes every file of the cat
 are only in the bucket, through the bucket mount (`~/b2music`). Lighter files are left as they are.
 `publish-catalog.sh` runs it for new and changed files, uploads the copies and gives each track the size of
 its copy (`"lite"`). The LITE button in Now playing switches the phone to them; downloaded tracks and
-originals already in the stream cache still play from there. The copies take about a quarter of the
+originals already in the stream cache still play from there. A copy that is newer than its file in the bucket
+counts as done, so another computer can take over the encoding: mount the bucket's `music/`, run
+`make_lite.py --mount <mount> --lite-files <listing>`, `rclone move` its `lite/` to the bucket and publish. The copies take about a quarter of the
 library's size.
 
 Tag editing: "Track info" in a track's menu → Edit. The phone puts edits into `state/tags.json`
