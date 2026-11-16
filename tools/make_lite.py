@@ -111,7 +111,9 @@ def main():
             light += 1
             continue
         dst = os.path.join(a.out, "lite", path + ".opus")
-        if in_bucket.get(path + ".opus", (0, 0))[1] > mtime or (os.path.exists(dst) and os.path.getmtime(dst) > mtime):
+        # empty copies are left by a crash of the computer (seen on arch): encode those again
+        size_b, time_b = in_bucket.get(path + ".opus", (0, 0))
+        if (size_b and time_b > mtime) or (os.path.exists(dst) and os.path.getsize(dst) and os.path.getmtime(dst) > mtime):
             continue
         local = os.path.join(a.music, path)
         src = local if os.path.exists(local) and os.path.getsize(local) == size else os.path.join(a.mount, path)
