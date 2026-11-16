@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
 enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), Search("Search") }
 
 /** What the Library tab lists. */
-enum class LibrarySection { Albums, Tracks, Artists, Genres, Folders }
+enum class LibrarySection { Tracks, Albums, Artists, Genres, Folders }
 
 /** Which tracks the queue (see [Ui.setQueueFilter]) and the library (see [Ui.libraryFilter]) keep. */
 enum class LikeFilter(val title: String) { All("All"), Liked("Liked"), NotLiked("Not liked") }
