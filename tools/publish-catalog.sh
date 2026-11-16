@@ -34,11 +34,14 @@ if missing:
 EOF
 
 # Light copies of new files for streaming on a slow network; the catalog gives the sizes of those in the bucket.
+# LITE=0 only marks the copies already in the bucket: encoding the rest takes hours (cmus-b2-add uses it).
 list_lite() { rclone lsf -R --files-only --fast-list --format tsp --separator $'\t' "$REMOTE/lite" > "$OUT/lite-files.txt"; }
 list_lite
-python3 "$here/make_lite.py" --catalog "$OUT/catalog.json.gz" --out "$OUT" --lite-files "$OUT/lite-files.txt"
-rclone move "$OUT/lite" "$REMOTE/lite" --fast-list --transfers 8 --exclude "*.part"
-list_lite
+if [ "${LITE:-1}" != 0 ]; then
+  python3 "$here/make_lite.py" --catalog "$OUT/catalog.json.gz" --out "$OUT" --lite-files "$OUT/lite-files.txt"
+  rclone move "$OUT/lite" "$REMOTE/lite" --fast-list --transfers 8 --exclude "*.part"
+  list_lite
+fi
 python3 "$here/make_lite.py" --catalog "$OUT/catalog.json.gz" --mark "$OUT/lite-files.txt"
 
 rclone copy "$OUT/covers" "$REMOTE/covers" --fast-list --transfers 16
