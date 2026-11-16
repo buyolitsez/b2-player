@@ -59,7 +59,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 if (!dst.exists() && !isStopped) {
                     try {
                         // Steps of 10 %: each step copies the map of every queued path and the rings animate between steps.
-                        app.b2.download(Library.MUSIC + p, dst, resume = true) { f ->
+                        if (!app.library.copyFromCache(p, dst)) app.b2.download(Library.MUSIC + p, dst, resume = true) { f ->
                             // A cancelled worker must stop writing: a new one may continue the same part file.
                             if (isStopped) throw IOException("Stopped")
                             val pct = (f * 10).toInt() / 10f
@@ -122,8 +122,17 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             _progress.update { it - tracks.map { t -> t.path }.toSet() }
         }
 
-        /** [wifiOnly] is for automatic downloads (liked tracks); manual ones use any network. */
+        /**
+         * [wifiOnly] is for automatic downloads (liked tracks); manual ones use any network. Tracks the player has
+         * cached whole are copied from the cache, so these need no network at all.
+         */
         fun enqueue(context: Context, name: String, title: String, tracks: List<Track>, wifiOnly: Boolean = false) {
+            val library = (context.applicationContext as App).library
+            val network = when {
+                tracks.all { library.isCached(it) } -> NetworkType.NOT_REQUIRED
+                wifiOnly -> NetworkType.UNMETERED
+                else -> NetworkType.CONNECTED
+            }
             // Work input is limited to 10 KB, so a long list goes as a chain of parts that run one after another.
             val paths = tracks.map { it.path }.distinct()
             val parts = mutableListOf(mutableListOf<String>()); var bytes = 0
@@ -136,10 +145,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val reqs = parts.map { part ->
                 OneTimeWorkRequestBuilder<DownloadWorker>()
                     .setInputData(workDataOf("paths" to part.toTypedArray(), "title" to title, "first" to first, "all" to paths.size))
-                    .setConstraints(
-                        Constraints.Builder()
-                            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
-                    )
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
                     .addTag(TAG)
                     .build()
                     .also { first += part.size }
