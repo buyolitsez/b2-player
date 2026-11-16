@@ -90,6 +90,9 @@ class MainActivity : ComponentActivity() {
             app.prefs.askedStorage.set(true)
             ui.toast("Allow access to all files: downloads go to ${app.prefs.downloadDir.value} and stay when the app is removed")
             startActivity(storageAccessIntent(this))
+        } else if (!ignoresBatteryOptimizations(this) && !app.prefs.askedBattery.value) {
+            app.prefs.askedBattery.set(true)
+            startActivity(batteryExemptionIntent(this))
         }
         ui.refreshCatalog()
         // Likes and ratings made in cmus, and what it played for the Resume banner, show up on return to the app and every minute while it is on screen.
@@ -137,8 +140,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Back from the all-files access screen.
+        // Back from the all-files access screen or the battery dialog.
         ui.moveDownloads()
+        ui.backgroundDownloads = ignoresBatteryOptimizations(this)
     }
 
     override fun onStart() {

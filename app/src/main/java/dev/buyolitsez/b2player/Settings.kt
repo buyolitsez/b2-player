@@ -96,6 +96,11 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
             if (ui.storageAccess) "${p.downloadDir.value}. Stays when the app is removed"
             else "Tap to allow access to all files. Until then downloads are kept inside the app and go away with it",
         ) { if (ui.storageAccess) pickFolder.launch(null) else ui.context.startActivity(storageAccessIntent(ui.context)) }
+        SettingAction(
+            "Download with the screen off",
+            if (ui.backgroundDownloads) "Allowed: battery optimization is off for the app"
+            else "Tap to turn off battery optimization. Until then downloads of tracks liked on the computer stop while the screen is off",
+        ) { if (!ui.backgroundDownloads) ui.context.startActivity(batteryExemptionIntent(ui.context)) }
         SettingAction("Downloads", "Progress and files on this phone") { ui.open(Screen.Downloads) }
         }
 

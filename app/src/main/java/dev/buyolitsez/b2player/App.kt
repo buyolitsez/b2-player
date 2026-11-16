@@ -67,6 +67,7 @@ class Prefs(context: Context) {
     val downloadDir = Str("downloadDir", File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC), "B2 Player").path)
     /** The all-files access screen was opened once on start. */
     val askedStorage = Bool("askedStorage", false)
+    val askedBattery = Bool("askedBattery", false)
     // Library
     val albumGrid = Bool("albumGrid", true)
     /** An [AlbumSort] name. */
