@@ -1,9 +1,11 @@
 package dev.buyolitsez.b2player
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -12,6 +14,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -22,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 enum class Tab(val title: String) { Library("Library"), Playlists("Playlists"), Search("Search") }
 
@@ -505,6 +509,33 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         runCatching { withContext(Dispatchers.IO) { app.deleteFromBucket(tracks) } }
             .onSuccess { n -> version++; toast(if (n == 1) "Deleted 1 track" else "Deleted $n tracks") }
             .onFailure { AppLog.e("delete", "Delete from bucket failed", it); toast("Couldn't delete: ${it.message}") }
+    }
+
+    /**
+     * Sends the track's file itself to another app: a copy of the download, of the player's cache, or of the
+     * original from the bucket, under its own file name in cacheDir/share (cleared on the next share).
+     */
+    fun share(t: Track) = scope.launch {
+        val name = t.path.substringAfterLast('/')
+        val dir = File(context.cacheDir, "share")
+        val file = File(dir, name)
+        val ok = runCatching {
+            withContext(Dispatchers.IO) {
+                dir.deleteRecursively(); dir.mkdirs()
+                val local = app.library.offlineFile(t.path)
+                when {
+                    local.exists() -> local.copyTo(file)
+                    app.library.copyFromCache(t.path, file) -> Unit
+                    else -> { toast("Downloading $name…"); app.b2.download(Library.MUSIC + t.path, file) }
+                }
+            }
+        }.onFailure { AppLog.e("share", "Share failed: ${t.path}", it); toast("Couldn't share: ${it.message}") }.isSuccess
+        if (!ok) return@launch
+        val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.').lowercase()) ?: "audio/*"
+        val send = Intent(Intent.ACTION_SEND).setType(type)
+            .putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(context, "${context.packageName}.files", file))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(send, null))
     }
 
     fun saveQueueAsPlaylist() {
