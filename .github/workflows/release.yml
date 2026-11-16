@@ -55,7 +55,10 @@ jobs:
           tag="v$version"
           apk="b2-player-$version.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
-          gh release create "$tag" "$apk" \
+          # R8 renames classes; the mapping turns stack traces from the phone's logs back into names.
+          mapping="b2-player-$version-mapping.txt"
+          cp app/build/outputs/mapping/release/mapping.txt "$mapping"
+          gh release create "$tag" "$apk" "$mapping" \
             --target "$GITHUB_SHA" \
             --title "$version" \
             --notes "$(git log -1 --pretty=%s)" \

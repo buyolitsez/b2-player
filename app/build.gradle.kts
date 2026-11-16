@@ -25,7 +25,9 @@ android {
     signingConfigs { getByName("debug") { System.getenv("DEBUG_KEYSTORE_FILE")?.let { storeFile = file(it) } } }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
