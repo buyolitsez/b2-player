@@ -53,19 +53,7 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     var ratingMenu by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) {
-        val since = since(days.value)
-        val list = cat.albums.filterBy(fq) { it.searchKey }
-        when (sort) {
-            AlbumSort.Artist -> list
-            AlbumSort.Recent -> list.filter { it.added * 1000 >= since }.sortedByDescending { it.added }
-            AlbumSort.Liked -> list.map { a -> a to a.tracks.maxOf { ui.likeOrder(it) } }.filter { since == 0L || it.second >= since }
-                .sortedWith(compareByDescending<Pair<Album, Long>> { it.second }.thenByDescending { it.first.added }).map { it.first }
-            AlbumSort.Rating -> list.map { it to ui.rating(it) }
-                .filter { (_, r) -> when (minRating.value) { 0 -> true; -1 -> r == null; else -> r != null && r >= minRating.value } }
-                .sortedByDescending { it.second ?: 0.0 }.map { it.first }
-        }
-    }
+    val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) { sortAlbums(ui, cat.albums.filterBy(fq) { it.searchKey }) }
     fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
     Column {
         FilterField(ui, q) { q = it }
@@ -92,6 +80,33 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
 
 /** Epoch ms from which "Recently added" and "Recently liked" keep things, for a period of [days]; 0 keeps all. */
 private fun since(days: Int) = if (days > 0) System.currentTimeMillis() - days * 86_400_000L else 0L
+
+/** [list] in the albums' sort order, with only the albums its period or rating keeps. */
+fun sortAlbums(ui: Ui, list: List<Album>): List<Album> {
+    val since = since(ui.prefs.recentDays.value)
+    val minRating = ui.prefs.minRating.value
+    return when (AlbumSort.entries.firstOrNull { it.name == ui.prefs.albumSort.value } ?: AlbumSort.Artist) {
+        AlbumSort.Artist -> list
+        AlbumSort.Recent -> list.filter { it.added * 1000 >= since }.sortedByDescending { it.added }
+        AlbumSort.Liked -> list.map { a -> a to a.tracks.maxOf { ui.likeOrder(it) } }.filter { since == 0L || it.second >= since }
+            .sortedWith(compareByDescending<Pair<Album, Long>> { it.second }.thenByDescending { it.first.added }).map { it.first }
+        AlbumSort.Rating -> list.map { it to ui.rating(it) }
+            .filter { (_, r) -> when (minRating) { 0 -> true; -1 -> r == null; else -> r != null && r >= minRating } }
+            .sortedByDescending { it.second ?: 0.0 }.map { it.first }
+    }
+}
+
+/** [list] in the tracks' sort order, with only the tracks its period keeps. */
+fun sortTracks(ui: Ui, list: List<Track>): List<Track> {
+    val since = since(ui.prefs.recentDays.value)
+    return when (TrackSort.entries.firstOrNull { it.name == ui.prefs.trackSort.value } ?: TrackSort.Artist) {
+        TrackSort.Artist -> list
+        TrackSort.Recent -> list.filter { it.album.added * 1000 >= since }.sortedByDescending { it.album.added }
+        // Tracks liked together keep their album order.
+        TrackSort.Liked -> list.map { it to ui.likeOrder(it) }.filter { since == 0L || it.second >= since }
+            .sortedWith(compareByDescending<Pair<Track, Long>> { it.second }.thenByDescending { it.first.album.added }).map { it.first }
+    }
+}
 
 /** The period of "Recently added" and "Recently liked", shared by albums and tracks. */
 @UnstableApi
@@ -142,17 +157,7 @@ fun TracksTab(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
     val days = ui.prefs.recentDays.value
-    val tracks = remember(cat, sort, days, fq, ui.version) {
-        val since = since(days)
-        val list = cat.tracks.filterBy(fq) { it.searchKey }
-        when (sort) {
-            TrackSort.Artist -> list
-            TrackSort.Recent -> list.filter { it.album.added * 1000 >= since }.sortedByDescending { it.album.added }
-            // Tracks liked together keep their album order.
-            TrackSort.Liked -> list.map { it to ui.likeOrder(it) }.filter { since == 0L || it.second >= since }
-                .sortedWith(compareByDescending<Pair<Track, Long>> { it.second }.thenByDescending { it.first.album.added }).map { it.first }
-        }
-    }
+    val tracks = remember(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
