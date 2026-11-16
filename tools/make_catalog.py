@@ -38,6 +38,7 @@ def conflict_copy(name, names):
     return SYNC_CONFLICT.search(name) is not None and SYNC_CONFLICT.sub("", name) in names
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 DISC_DIR = re.compile(r"^\s*(cd|disc|disk|диск)\s*\d+\s*$", re.I)
+DISC_IN_NAME = re.compile(r"(?<![^\W\d_])(?:cd|disc|disk|lp|диск)\s*\.?\s*(\d{1,2})(?!\w)", re.I)
 COVER_NAMES = ("cover", "folder", "front", "обложка")
 THUMB = 512
 
@@ -316,6 +317,36 @@ def write_lyrics(path, lyrics):
         fh.write(text)
 
 
+def merge_discs(albums, lyrics_dir):
+    """Joins an album split into sibling folders such as "CD 1 - Jupiter" and "CD 2 - Mars"
+    (same album tag and artist). The joined album keeps the id and cover of the first disc."""
+    groups = collections.defaultdict(list)
+    for al in albums:
+        m = DISC_IN_NAME.search(os.path.basename(al["dir"]))
+        if m:
+            groups[(os.path.dirname(al["dir"]), al["title"], al["artist"])].append((int(m.group(1)), al))
+    for (parent, _, _), parts in groups.items():
+        if len(parts) < 2:
+            continue
+        parts.sort(key=lambda x: (x[0], x[1]["dir"]))
+        first = parts[0][1]
+        lyrics = {}
+        for i, (_, al) in enumerate(parts):
+            for t in al["tracks"]:
+                t["disc"] = i + 1
+            lyr_file = os.path.join(lyrics_dir, al["id"] + ".json")
+            if os.path.exists(lyr_file):
+                with open(lyr_file, encoding="utf-8") as fh:
+                    lyrics.update(json.load(fh))
+            if al is not first:
+                first["tracks"] += al["tracks"]
+                first["added"] = max(first["added"], al["added"])
+                albums.remove(al)
+        first["dir"] = parent
+        if lyrics:
+            write_lyrics(os.path.join(lyrics_dir, first["id"] + ".json"), lyrics)
+
+
 def keep_bucket_only(out_albums, root, previous, bucket_files, lyrics_dir, old_lyrics):
     """Add the tracks of the previous catalog whose file is no longer in the
     library but is still in the bucket."""
@@ -501,6 +532,7 @@ def main():
 
     if a.previous and a.bucket_files and not a.only:
         keep_bucket_only(out_albums, root, a.previous, a.bucket_files, lyrics_dir, old_lyrics)
+    merge_discs(out_albums, lyrics_dir)
     out_albums.sort(key=lambda x: (x["artist"].lower(), x["year"] or 0, x["title"].lower()))
     catalog = {"version": 1, "generated": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
                "musicPrefix": "music/", "albums": out_albums}
