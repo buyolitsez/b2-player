@@ -261,9 +261,9 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     var filter by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
+    val fq = remember(q) { Query(q) }
     val played = if (fq.isEmpty()) order.take(at) else emptyList()
-    val next = if (fq.isEmpty()) order.drop(at + 1) else order.filter { tracks.getOrNull(it)?.searchKey?.contains(fq) == true }
+    val next = if (fq.isEmpty()) order.drop(at + 1) else order.filterBy(fq) { tracks.getOrNull(it)?.searchKey.orEmpty() }
     val current = tracks.getOrNull(ui.currentIndex)
     // Start at the current track, with what already played above it.
     LaunchedEffect(Unit) { if (played.isNotEmpty()) listState.scrollToItem(played.size + 1) }

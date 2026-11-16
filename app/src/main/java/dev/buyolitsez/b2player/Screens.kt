@@ -56,10 +56,10 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     var ratingMenu by remember { mutableStateOf(false) }
     var customDays by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
+    val fq = remember(q) { Query(q) }
     val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) {
         val since = if (recent && days.value > 0) System.currentTimeMillis() / 1000 - days.value * 86400L else 0L
-        val list = cat.albums.filter { a -> fq in a.searchKey && a.added >= since }
+        val list = cat.albums.filter { it.added >= since }.filterBy(fq) { it.searchKey }
         when (sort) {
             AlbumSort.Artist -> list
             AlbumSort.Recent -> list.sortedByDescending { it.added }
@@ -125,8 +125,8 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
 @Composable
 fun ArtistsTab(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val artists = remember(cat, fq) { cat.artists.filter { fq in searchFold(it.first) } }
+    val fq = remember(q) { Query(q) }
+    val artists = remember(cat, fq) { cat.artists.filterBy(fq) { searchFold(it.first) } }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
@@ -141,8 +141,8 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     val albums = remember(cat, name) { cat.albums.filter { it.artist.equals(name, ignoreCase = true) }.sortedBy { it.year ?: 0 } }
     val tracks = remember(albums) { albums.flatMap { it.tracks } }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
+    val fq = remember(q) { Query(q) }
+    val shown = remember(albums, fq) { albums.filterBy(fq) { it.searchKey } }
     Column {
         FilterField(ui, q) { q = it }
         AlbumGrid(ui, shown, header = {
@@ -160,8 +160,8 @@ const val NO_GENRE = "No genre"
 @Composable
 fun GenresTab(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val genres = remember(cat, fq) { cat.genres.filter { fq in searchFold(it.first.ifEmpty { NO_GENRE }) } }
+    val fq = remember(q) { Query(q) }
+    val genres = remember(cat, fq) { cat.genres.filterBy(fq) { searchFold(it.first.ifEmpty { NO_GENRE }) } }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
@@ -178,8 +178,8 @@ fun GenreScreen(ui: Ui, cat: Catalog, name: String) {
     val albums = remember(cat, name) { cat.genres.firstOrNull { it.first == name }?.second.orEmpty() }
     val tracks = remember(albums) { albums.flatMap { it.tracks } }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val shown = remember(albums, fq) { albums.filter { fq in it.searchKey } }
+    val fq = remember(q) { Query(q) }
+    val shown = remember(albums, fq) { albums.filterBy(fq) { it.searchKey } }
     Column {
         FilterField(ui, q) { q = it }
         AlbumGrid(ui, shown, header = { PlayButtons(ui, "genre:$name", name.ifEmpty { NO_GENRE }, tracks, count = true) })
@@ -191,9 +191,9 @@ fun GenreScreen(ui: Ui, cat: Catalog, name: String) {
 fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
     val f = remember(cat, path) { cat.folder(path) } ?: return
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val subs = remember(f, fq) { f.folders.values.filter { fq in searchFold(it.name) } }
-    val tracks = remember(f, fq) { f.tracks.filter { fq in it.searchKey } }
+    val fq = remember(q) { Query(q) }
+    val subs = remember(f, fq) { f.folders.values.toList().filterBy(fq) { searchFold(it.name) } }
+    val tracks = remember(f, fq) { f.tracks.filterBy(fq) { it.searchKey } }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
@@ -210,14 +210,14 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
 @Composable
 fun SearchTab(ui: Ui, cat: Catalog) {
     val q = ui.query.trim()
-    val fq = remember(q) { searchFold(q) }
+    val fq = remember(q) { Query(q) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     // Filtering 18k tracks runs off the main thread; the previous results stay until the new ones are ready.
     val found by produceState(Triple(emptyList<Pair<String, List<Album>>>(), emptyList<Album>(), emptyList<Track>()), cat, fq) {
-        value = if (fq.length < 2) Triple(emptyList(), emptyList(), emptyList()) else withContext(Dispatchers.Default) {
-            Triple(cat.artists.filter { fq in searchFold(it.first) }, cat.albums.filter { fq in it.searchKey }, cat.tracks.filter { fq in it.searchKey })
+        value = if (fq.folded.length < 2) Triple(emptyList(), emptyList(), emptyList()) else withContext(Dispatchers.Default) {
+            Triple(cat.artists.search(fq) { searchFold(it.first) }, cat.albums.search(fq) { it.searchKey }, cat.tracks.search(fq) { it.searchKey })
         }
     }
     val (artists, albums, allTracks) = found
@@ -330,8 +330,8 @@ fun PlaylistsTab(ui: Ui, cat: Catalog) {
     val lists = remember(ui.version) { ui.app.playlists.all }
     val likedCount = remember(cat, ui.version) { cat.tracks.count { ui.library.isLiked(it) } }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
-    val shown = remember(lists, fq) { lists.filter { fq in searchFold(it.name) } }
+    val fq = remember(q) { Query(q) }
+    val shown = remember(lists, fq) { lists.filterBy(fq) { searchFold(it.name) } }
     // Covers and the total time of each playlist, for its row.
     val details = remember(lists, cat) {
         lists.associate { p ->
@@ -417,10 +417,10 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
     }
     fun dropAt(i: Int): Unit = ui.editPlaylist(id) { pl -> pl.copy(trackIds = pl.trackIds.toMutableList().apply { removeAt(i) }) }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
+    val fq = remember(q) { Query(q) }
     // Rows keep their playlist index so remove works on the filtered list; dragging is off while filtering.
     val likeFilter = ui.libraryFilter
-    val shown = remember(tracks, fq, likeFilter, ui.version) { tracks.indices.filter { fq in tracks[it].searchKey && ui.shows(tracks[it]) } }
+    val shown = remember(tracks, fq, likeFilter, ui.version) { tracks.indices.filter { ui.shows(tracks[it]) }.filterBy(fq) { tracks[it].searchKey } }
     val drag = fq.isEmpty() && likeFilter == LikeFilter.All
     // The header counts what the like filter shows.
     val counted = remember(tracks, likeFilter, ui.version) { tracks.filter { ui.shows(it) } }
@@ -488,9 +488,9 @@ fun DragHandle(modifier: Modifier) =
 fun LikedScreen(ui: Ui, cat: Catalog) {
     var byRecent by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
+    val fq = remember(q) { Query(q) }
     val liked = remember(cat, ui.version, byRecent, fq) {
-        val l = cat.tracks.filter { ui.library.isLiked(it) && (fq.isEmpty() || fq in it.searchKey) }
+        val l = cat.tracks.filter { ui.library.isLiked(it) }.filterBy(fq) { it.searchKey }
         if (byRecent) l.sortedByDescending { it.album.added } else l
     }
     Column {
