@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
         ui = Ui(this, app, lifecycleScope)
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (!app.b2.settings.complete) { ui.open(Screen.Settings); ui.open(Screen.Accounts) }
+        else if (!hasStorageAccess(this) && !app.prefs.askedStorage.value) {
+            app.prefs.askedStorage.set(true)
+            ui.toast("Allow access to all files: downloads go to ${app.prefs.downloadDir.value} and stay when the app is removed")
+            startActivity(storageAccessIntent(this))
+        }
         ui.refreshCatalog()
         // Likes and ratings made in cmus, and what it played for the Resume banner, show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
@@ -129,6 +134,12 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object { const val OPEN_NOW_PLAYING = "openNowPlaying" }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from the all-files access screen.
+        ui.moveDownloads()
+    }
 
     override fun onStart() {
         super.onStart()

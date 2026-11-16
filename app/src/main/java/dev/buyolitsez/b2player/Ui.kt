@@ -451,6 +451,20 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         toast("Downloading ${todo.size} tracks, ${formatSize(todo.distinctBy { it.path }.sumOf { it.size })}")
     }
 
+    /** Whether the download folder can be used, see [hasStorageAccess]; checked when the app comes back to the screen. */
+    var storageAccess by mutableStateOf(hasStorageAccess(context))
+
+    /** On return to the app (all-files access may have been granted) and after the download folder changes. */
+    fun moveDownloads() {
+        storageAccess = hasStorageAccess(context)
+        scope.launch {
+            val moved = withContext(Dispatchers.IO) {
+                runCatching { library.moveDownloads(app.catalog.value) }.onFailure { AppLog.w("download", "Moving downloads failed", it) }.getOrDefault(true)
+            }
+            if (moved) version++
+        }
+    }
+
     fun deleteDownloads(tracks: List<Track>) {
         scope.launch {
             withContext(Dispatchers.IO) { tracks.forEach { library.deleteDownload(it) } }

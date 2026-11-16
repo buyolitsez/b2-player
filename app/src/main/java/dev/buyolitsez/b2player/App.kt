@@ -63,6 +63,10 @@ class Prefs(context: Context) {
     val autoWifiOnly = Bool("autoWifiOnly", true)
     val deleteOnUnlike = Bool("deleteOnUnlike", true)
     val manualWifiOnly = Bool("manualWifiOnly", false)
+    /** Kept when the app is removed; see [Library.offlineDir]. */
+    val downloadDir = Str("downloadDir", File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC), "B2 Player").path)
+    /** The all-files access screen was opened once on start. */
+    val askedStorage = Bool("askedStorage", false)
     // Library
     val albumGrid = Bool("albumGrid", true)
     /** An [AlbumSort] name. */
@@ -287,6 +291,9 @@ class App : Application() {
         // Search keys (accent folding of 18k titles) are built here, not on the first keystroke.
         scope.launch(Dispatchers.Default) {
             catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey }; library.dropStaleCache(this) } }
+        }
+        scope.launch(Dispatchers.IO) {
+            catalog.collect { c -> c?.let { runCatching { library.moveDownloads(it) }.onFailure { AppLog.w("download", "Moving downloads failed", it) } } }
         }
         cachedCatalogLoad = scope.launch(Dispatchers.IO) {
             val started = System.currentTimeMillis()

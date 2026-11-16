@@ -1,5 +1,10 @@
 package dev.buyolitsez.b2player
 
+import android.net.Uri
+import android.os.Environment
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
@@ -80,6 +85,17 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
                 }
             }
         }
+        val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val path = folderPath(uri)
+            if (path == null) ui.toast("Pick a folder on the phone's storage")
+            else { p.downloadDir.set(path); ui.moveDownloads(); ui.toast("Downloads move to $path") }
+        }
+        SettingAction(
+            "Download folder",
+            if (ui.storageAccess) "${p.downloadDir.value}. Stays when the app is removed"
+            else "Tap to allow access to all files. Until then downloads are kept inside the app and go away with it",
+        ) { if (ui.storageAccess) pickFolder.launch(null) else ui.context.startActivity(storageAccessIntent(ui.context)) }
         SettingAction("Downloads", "Progress and files on this phone") { ui.open(Screen.Downloads) }
         }
 
@@ -146,6 +162,14 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         }
         }
     }
+}
+
+/** The file path of a folder picked in the system picker, or null for one outside the phone's storage (e.g. a cloud drive). */
+private fun folderPath(tree: Uri): String? {
+    if (tree.authority != "com.android.externalstorage.documents") return null
+    val (volume, rel) = DocumentsContract.getTreeDocumentId(tree).split(':', limit = 2).takeIf { it.size == 2 } ?: return null
+    val root = if (volume == "primary") Environment.getExternalStorageDirectory().path else "/storage/$volume"
+    return "$root/$rel".trimEnd('/')
 }
 
 /** Keys and sign-ins: Backblaze B2, Last.fm and the assistant's Claude key. */

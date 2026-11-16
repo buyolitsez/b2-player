@@ -1,8 +1,14 @@
 package dev.buyolitsez.b2player
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -92,9 +98,16 @@ data class SavedQueue(val name: String, val ids: List<String>, val index: Int, v
 
 /** Likes (synced to state/likes.json in the bucket), offline files, cache state and saved queues. */
 @UnstableApi
-class Library(context: Context, private val cache: Cache, private val settings: Prefs) {
+class Library(private val context: Context, private val cache: Cache, private val settings: Prefs) {
     private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
-    val offlineDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "offline")
+    /** The app's own folder: downloads lived there before, and go away with the app. */
+    private val appDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "offline")
+    /**
+     * The chosen folder (Music/B2 Player by default) needs all-files access; until it is granted downloads go to [appDir].
+     * Checked again by [moveDownloads], not on each use: lists ask it for every track.
+     */
+    @Volatile var offlineDir = currentDir(); private set
+    private fun currentDir() = if (hasStorageAccess(context)) File(settings.downloadDir.value) else appDir
     val catalogFile = File(context.filesDir, "catalog.json.gz")
     /** SHA-1 of the saved catalog as B2 reports it; an unchanged catalog is not downloaded again. */
     var catalogSha: String?
@@ -155,8 +168,52 @@ class Library(context: Context, private val cache: Cache, private val settings: 
     fun deleteDownload(t: Track) {
         val f = offlineFile(t.path)
         f.delete()
-        var d = f.parentFile
-        while (d != null && d != offlineDir && d.list()?.isEmpty() == true) { d.delete(); d = d.parentFile }
+        pruneDirs(f.parentFile, offlineDir)
+    }
+
+    /**
+     * Updates [offlineDir] and moves the downloads of [c]'s tracks into it from the app's folder and from the folder chosen before.
+     * Only catalog tracks are moved: a chosen folder may hold other files. A folder the app creates gets a
+     * .nomedia file, so other players don't list the downloads twice. Returns whether anything changed.
+     */
+    @Synchronized
+    fun moveDownloads(c: Catalog?): Boolean {
+        val to = currentDir()
+        val changed = to != offlineDir
+        offlineDir = to
+        if (c == null) return changed
+        val sources = setOf(appDir, File(prefs.getString("downloadsAt", appDir.path)!!)).filter { it != to && it.exists() }
+        if (sources.isEmpty()) return changed
+        if (!to.exists() && to.mkdirs()) File(to, ".nomedia").createNewFile()
+        for (from in sources) {
+            var moved = 0
+            for (path in c.tracks.map { it.path }.distinct()) {
+                val src = File(from, path)
+                if (!src.exists()) continue
+                val dst = File(to, path)
+                if (!dst.exists()) {
+                    dst.parentFile?.mkdirs()
+                    // Two volumes, or the app's folder on some phones: rename fails, copy instead.
+                    if (!src.renameTo(dst)) {
+                        val tmp = File(dst.path + ".part")
+                        src.copyTo(tmp, overwrite = true)
+                        tmp.renameTo(dst)
+                    }
+                    moved++
+                }
+                src.delete()
+                pruneDirs(src.parentFile, from)
+            }
+            if (from == appDir) appDir.deleteRecursively()
+            AppLog.i("download", "Moved $moved downloads from $from to $to")
+        }
+        prefs.edit().putString("downloadsAt", to.path).apply()
+        return true
+    }
+
+    private fun pruneDirs(dir: File?, root: File) {
+        var d = dir
+        while (d != null && d != root && d.list()?.isEmpty() == true) { d.delete(); d = d.parentFile }
     }
 
     /**
@@ -256,3 +313,14 @@ class Library(context: Context, private val cache: Cache, private val settings: 
         fun isLite(uri: Uri) = uri.path?.startsWith("/$LITE") == true
     }
 }
+
+/** Access to shared storage for the download folder: all-files access, or the storage permission on Android 10. */
+fun hasStorageAccess(c: Context) =
+    if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+    else c.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+/** The system screen that grants [hasStorageAccess]. */
+fun storageAccessIntent(c: Context) = Intent(
+    if (Build.VERSION.SDK_INT >= 30) Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+    Uri.parse("package:${c.packageName}"),
+)
