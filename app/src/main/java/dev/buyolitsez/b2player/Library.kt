@@ -152,8 +152,10 @@ class Library(private val context: Context, private val cache: Cache, private va
      * meanwhile are kept, and uploads the result if it differs. Likes are stored as differences
      * from the catalog's "liked" flags, so catalog rebuilds keep them. Returns the ids whose like changed here.
      */
-    @Synchronized
-    fun syncLikes(b2: B2): Set<String> {
+    // An own lock: a sync waits on the network, and moveDownloads must not wait for it.
+    private val syncLock = Any()
+
+    fun syncLikes(b2: B2): Set<String> = synchronized(syncLock) {
         val (plus, minus) = synchronized(likesLock) { set("liked+").toSet() to set("liked-").toSet() }
         val localTimes = likeTimes
         val j = b2.fetchOrNull(LIKES)?.let { JSONObject(it.decodeToString()) }
@@ -172,7 +174,9 @@ class Library(private val context: Context, private val cache: Cache, private va
         if (newPlus != remotePlus || newMinus != remoteMinus || newTimes != remoteTimes) {
             val out = JSONObject().put("version", 1).put("added", JSONArray(newPlus.sorted())).put("removed", JSONArray(newMinus.sorted()))
                 .put("times", JSONObject(newTimes.toSortedMap()))
-            b2.upload(LIKES, out.toString(1).toByteArray(), "application/json")
+            try { b2.upload(LIKES, out.toString(1).toByteArray(), "application/json") }
+            // With only times to fill in, a read-only key still takes the likes from the bucket.
+            catch (e: B2.ReadOnlyKey) { if (newPlus != remotePlus || newMinus != remoteMinus) throw e }
         }
         return synchronized(likesLock) {
             // A like made during the sync stays on top; the sync it started uploads it.
