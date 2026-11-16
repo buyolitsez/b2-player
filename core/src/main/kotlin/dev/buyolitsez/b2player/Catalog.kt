@@ -14,9 +14,76 @@ data class Track(
 }
 
 private val MARKS = Regex("\\p{Mn}+")
+private val CYRILLIC = "абвгдезиклмнопрстуфхцчшщъыьэюя".toList().zip(
+    listOf("a", "b", "v", "g", "d", "e", "z", "i", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "h", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya")
+).toMap() + mapOf('ж' to "zh")
 
-/** Lowercase without accents, so "bjork" finds "Björk" and "ежик" finds "ёжик". */
-fun searchFold(s: String): String = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(MARKS, "")
+/**
+ * Lowercase without accents and in Latin letters, so "bjork" finds "Björk", "ежик" finds "ёжик" and "kino" finds "Кино".
+ * Display text stays as it is; this only builds keys to compare.
+ */
+fun searchFold(s: String): String {
+    val plain = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(MARKS, "")
+    if (plain.none { it in CYRILLIC }) return plain
+    return buildString { for (c in plain) CYRILLIC[c]?.let(::append) ?: append(c) }
+}
+
+private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
+
+/**
+ * What was typed in a search field. A key matches when each typed word is found in it: as is, or as the start of
+ * one of its words with a typo or two (a missed, extra, wrong or swapped letter), so "metalica" finds "Metallica".
+ */
+class Query(text: String) {
+    val folded = searchFold(text.trim())
+    private val words = folded.split(NON_WORD).filter { it.isNotEmpty() }
+
+    fun isEmpty() = words.isEmpty()
+
+    /** 0 the key starts with the query, 1 every word starts a word of the key, 2 found inside, 3 with typos; null no match. */
+    fun rank(key: String): Int? {
+        if (words.isEmpty() || key.startsWith(folded)) return 0
+        var keyWords: List<String>? = null
+        var best = 1
+        for (w in words) {
+            val kw = keyWords ?: key.split(NON_WORD).also { keyWords = it }
+            best = maxOf(best, when {
+                kw.any { it.startsWith(w) } -> 1
+                w in key || w in kw.joinToString("") -> 2
+                kw.any { typos(w, it) <= w.length / 4 } -> 3
+                else -> return null
+            })
+        }
+        return best
+    }
+
+    fun matches(key: String) = rank(key) != null
+}
+
+/** Edits (a letter inserted, deleted, replaced, or two neighbours swapped) to turn [w] into the start of [key]. */
+private fun typos(w: String, key: String): Int {
+    if (w.length < 4) return Int.MAX_VALUE
+    // d[i][j]: edits from the first i letters of w to the first j letters of key.
+    val d = Array(w.length + 1) { i -> IntArray(key.length + 1) { j -> if (i == 0) j else if (j == 0) i else 0 } }
+    for (i in 1..w.length) for (j in 1..key.length) {
+        val same = if (w[i - 1] == key[j - 1]) 0 else 1
+        d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + same)
+        if (i > 1 && j > 1 && w[i - 1] == key[j - 2] && w[i - 2] == key[j - 1]) d[i][j] = minOf(d[i][j], d[i - 2][j - 2] + 1)
+    }
+    return d[w.length].min()
+}
+
+/** Items matching [q], best first; with an empty query, all of them. */
+fun <T> List<T>.search(q: Query, key: (T) -> String): List<T> =
+    if (q.isEmpty()) this else mapNotNull { x -> q.rank(key(x))?.let { x to it } }.sortedBy { it.second }.map { it.first }
+
+/** Items matching [q] in their own order. Matches with typos are left out when there are ones without, so "love" does not also list "live". */
+fun <T> List<T>.filterBy(q: Query, key: (T) -> String): List<T> {
+    if (q.isEmpty()) return this
+    val ranked = mapNotNull { x -> q.rank(key(x))?.let { x to it } }
+    val exact = ranked.filter { it.second < 3 }
+    return (exact.ifEmpty { ranked }).map { it.first }
+}
 
 class Album(
     val id: String, val dir: String, val title: String, val artist: String, val year: Int?, val cover: String?,

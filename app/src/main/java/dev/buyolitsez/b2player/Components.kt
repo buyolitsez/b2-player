@@ -140,7 +140,7 @@ fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, mo
 
 /**
  * Search field above a list, opened with the search button in the top bar; the screen filters its
- * own list with [searchFold] of the text. A filled-in filter stays visible, and erasing it keeps it open.
+ * own list with a [Query] of the text. A filled-in filter stays visible, and erasing it keeps it open.
  */
 @UnstableApi
 @Composable

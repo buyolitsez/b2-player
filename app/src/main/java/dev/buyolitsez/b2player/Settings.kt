@@ -290,7 +290,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
     }
     val total = downloaded?.sumOf { (_, t) -> t.distinctBy { it.path }.sumOf { it.size } } ?: 0
     var q by rememberSaveable { mutableStateOf("") }
-    val fq = searchFold(q.trim())
+    val fq = remember(q) { Query(q) }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
@@ -316,7 +316,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
                 }
             }
             item { SectionTitle("On this phone") }
-            val list = downloaded?.filter { fq in it.first.searchKey }
+            val list = downloaded?.filterBy(fq) { it.first.searchKey }
             if (list == null) item { Text("Counting…", Modifier.padding(20.dp), color = Muted) }
             else if (list.isEmpty()) item { Text("Nothing downloaded yet", Modifier.padding(20.dp), color = Muted) }
             else items(list, key = { it.first.id }) { (a, t) ->
