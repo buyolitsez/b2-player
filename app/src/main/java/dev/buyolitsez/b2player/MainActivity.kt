@@ -236,7 +236,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     title = {
                         val title = when (screen) {
                             // These screens show their name in a large header of their own.
-                            is Screen.AlbumView, is Screen.PlaylistView, Screen.LikedView, Screen.Settings, Screen.Accounts -> ""
+                            is Screen.AlbumView, is Screen.PlaylistView, Screen.LikedView, Screen.Settings, Screen.Accounts, is Screen.SoulseekView -> ""
                             is Screen.ArtistView -> screen.name
                             is Screen.GenreView -> screen.name.ifEmpty { NO_GENRE }
                             is Screen.FolderView -> screen.path.substringAfterLast('/')
@@ -350,6 +350,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             c == null || full == null -> Placeholder(if (ui.status == Ui.UPDATING || ui.library.catalogFile.exists()) "Loading the library…" else "The library isn't loaded yet")
                             screen == Screen.Downloads -> DownloadsScreen(ui, full)
                             screen == Screen.Assistant -> AssistantScreen(ui)
+                            screen is Screen.SoulseekView -> SoulseekScreen(ui, screen.query)
                             screen == Screen.EqualizerView -> EqualizerScreen(ui)
                             // the album as in the current catalog, so tracks deleted from it leave the screen
                             screen is Screen.AlbumView -> AlbumScreen(ui, c.albums.find { it.id == screen.album.id } ?: screen.album)

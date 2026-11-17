@@ -225,6 +225,17 @@ fun AccountsScreen(ui: Ui) {
             }
         }
 
+        // ---------- soulseek ----------
+        }
+        SettingsGroup("Soulseek") {
+        var server by remember { mutableStateOf(app.prefs.soulseekServer.value) }
+        FieldsBlock {
+            Text("Search in the app finds albums on Soulseek through the computer: cmus-b2-add --serve there, over Tailscale.",
+                style = MaterialTheme.typography.bodySmall, color = Muted)
+            OutlinedTextField(server, { server = it }, Modifier.fillMaxWidth(), label = { Text("Computer (host:port)") }, singleLine = true)
+            Pill("Save", active = true) { app.prefs.soulseekServer.set(server.trim()); ui.toast("Saved") }
+        }
+
         // ---------- assistant ----------
         }
         SettingsGroup("Assistant") {

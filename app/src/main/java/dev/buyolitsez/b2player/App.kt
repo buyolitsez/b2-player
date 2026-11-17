@@ -85,6 +85,8 @@ class Prefs(context: Context) {
     val librarySection = Str("librarySection", "Albums")
     val swipeActions = Bool("swipeActions", true)
     val coverTint = Bool("coverTint", true)
+    /** Address of cmus-b2-add --serve on the computer, over Tailscale. */
+    val soulseekServer = Str("soulseekServer", "arch:5031")
     // History
     val recordHistory = Bool("recordHistory", true)
     // Lyrics, controls, diagnostics

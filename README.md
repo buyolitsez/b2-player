@@ -137,6 +137,12 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
   stopped. Afterwards run `tools/sync-music.sh && tools/publish-catalog.sh`.
   The translate button in lyrics: Claude (with the assistant's key) translates the song line by line into English
   or Russian, shown next to the original. Cached per track and language in `files/lyrics-translations`.
+- Soulseek: at the end of Search, "Search Soulseek" finds albums on Soulseek through the computer, which runs
+  `cmus-b2-add --serve 5031` (cmus fork, `contrib/cmus-b2-phone.service`) next to slskd; the phone reaches it
+  over Tailscale (the address is in Settings → Accounts, `arch:5031` by default). Picked albums get a place in
+  the library from Claude (correct it in words), then the computer downloads them, checks them and adds them to
+  the bucket and the catalog in the background, as `cmus-b2-add` does; the screen shows its downloads, and the
+  library reloads when one is done.
 - Logs: `files/logs/app.log` in the app, rotated at 512 KB, ~1.5 MB at most. After errors they are copied
   to the bucket as `logs/<date>.log` (one version per day). To read them:
   `rclone cat <remote>:<bucket>/logs/<date>.log` or

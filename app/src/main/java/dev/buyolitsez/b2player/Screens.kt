@@ -296,6 +296,11 @@ fun SearchTab(ui: Ui, cat: Catalog) {
                 TrackRow(ui, t, showCover = true, onClick = { focusManager.clearFocus(); ui.play(tracks, i) })
             }
             item { more(allTracks.size - tracks.size, "tracks") }
+            if (q.length >= 2) item {
+                ListRow(Icons.Default.TravelExplore, "Search Soulseek for “$q”", "Download albums through the computer") {
+                    focusManager.clearFocus(); ui.open(Screen.SoulseekView(q))
+                }
+            }
         }
     }
 }

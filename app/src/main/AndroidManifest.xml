@@ -16,8 +16,10 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
+    <!-- Plain HTTP is used only for the Soulseek search on the computer (Soulseek.kt), over Tailscale, which encrypts it. -->
     <application
         android:name=".App"
+        android:usesCleartextTraffic="true"
         android:label="B2 Player"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
