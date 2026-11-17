@@ -36,12 +36,23 @@ import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private class SettingsSizes(val missing: List<Track>, val plays: Int, val cacheBytes: Long, val logBytes: Long)
+
 @UnstableApi
 @Composable
 fun SettingsScreen(ui: Ui, cat: Catalog?) {
     val app = ui.app
     val p = app.prefs
-    ui.version
+    // Checking the file of each liked track on the shared storage, and the cache size (it waits for the cache's lock),
+    // can take seconds, so they are worked out off the main thread and the screen shows "…" meanwhile.
+    val sizes by produceState<SettingsSizes?>(null, cat, ui.version) {
+        value = withContext(Dispatchers.IO) {
+            SettingsSizes(
+                cat?.tracks?.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) }.orEmpty(),
+                app.history.all().size, ui.library.cacheBytes(), AppLog.sizeBytes(),
+            )
+        }
+    }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = LocalListBottom.current + 24.dp)) {
         ScreenTitle("Settings")
         Row(
@@ -72,10 +83,14 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingSwitch("Remove download when unliked", "Unliking deletes the copy on the phone", p.deleteOnUnlike)
         SettingSwitch("Manual downloads only on Wi-Fi", "Download buttons wait for Wi-Fi", p.manualWifiOnly)
         if (cat != null) {
-            val missing = remember(cat, ui.version) { cat.tracks.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) } }
+            val missing = sizes?.missing.orEmpty()
             SettingAction(
                 "Download all liked now",
-                if (missing.isEmpty()) "Everything liked is on the phone" else "${missing.size} tracks, ${formatSize(missing.distinctBy { it.path }.sumOf { it.size })}",
+                when {
+                    sizes == null -> "…"
+                    missing.isEmpty() -> "Everything liked is on the phone"
+                    else -> "${missing.size} tracks, ${formatSize(missing.distinctBy { it.path }.sumOf { it.size })}"
+                },
             ) {
                 if (missing.isNotEmpty()) {
                     // A tap is a manual download: the Wi-Fi rule of manual downloads, and it replaces one still waiting under an older rule.
@@ -119,7 +134,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingsGroup("History") {
         SettingSwitch("Keep listening history", "Used for stats; synced to the bucket", p.recordHistory)
         var confirmClear by remember { mutableStateOf(false) }
-        SettingAction("Clear history on this phone", "${plays(app.history.all().size)}. The copy in the bucket stays") { confirmClear = true }
+        SettingAction("Clear history on this phone", "${sizes?.let { plays(it.plays) } ?: "…"}. The copy in the bucket stays") { confirmClear = true }
         if (confirmClear) AlertDialog(
             { confirmClear = false }, containerColor = Gray2, title = { Text("Clear local history?") },
             text = { Text("It comes back from the bucket on the next sync unless you delete state/history.tsv there.") },
@@ -141,7 +156,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         var cacheGb by remember { mutableFloatStateOf(p.cacheGb.value.toFloat()) }
         Column(Modifier.fillMaxWidth().background(Gray1).padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text("Stream cache: ${cacheGb.toInt()} GB")
-            Text("Used ${formatSize(ui.library.cacheBytes())}. A new size applies after the app restarts",
+            Text("Used ${sizes?.let { formatSize(it.cacheBytes) } ?: "…"}. A new size applies after the app restarts",
                 style = MaterialTheme.typography.bodySmall, color = Muted)
             Slider(cacheGb, { cacheGb = it }, valueRange = 1f..50f, steps = 48, onValueChangeFinished = { p.cacheGb.set(cacheGb.toInt()) })
         }
@@ -151,7 +166,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
         SettingsGroup("Diagnostics") {
         SettingSwitch("Detailed logs", "Also log every track change and action; applies after restart", p.verboseLogs)
         SettingSwitch("Upload logs after problems", "Copies the log to logs/<date>.log in the bucket when something failed", p.uploadLogs)
-        SettingAction("Upload logs now", "Log on the phone: ${formatSize(AppLog.sizeBytes())}, never more than about 1.5 MB") {
+        SettingAction("Upload logs now", "Log on the phone: ${sizes?.let { formatSize(it.logBytes) } ?: "…"}, never more than about 1.5 MB") {
             AppLog.i("app", "Manual log upload"); app.uploadLogs(force = true); ui.toast("Uploading logs")
         }
         SettingAction("Clear logs", null) { AppLog.clear(); ui.version++; ui.toast("Logs cleared") }
@@ -182,7 +197,16 @@ private fun folderPath(tree: Uri): String? {
 @Composable
 fun AccountsScreen(ui: Ui) {
     val app = ui.app
-    ui.version
+    // Checking the file of each liked track on the shared storage, and the cache size (it waits for the cache's lock),
+    // can take seconds, so they are worked out off the main thread and the screen shows "…" meanwhile.
+    val sizes by produceState<SettingsSizes?>(null, cat, ui.version) {
+        value = withContext(Dispatchers.IO) {
+            SettingsSizes(
+                cat?.tracks?.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) }.orEmpty(),
+                app.history.all().size, ui.library.cacheBytes(), AppLog.sizeBytes(),
+            )
+        }
+    }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = LocalListBottom.current + 24.dp)) {
         ScreenTitle("Accounts")
         SettingsGroup("Backblaze B2") {
