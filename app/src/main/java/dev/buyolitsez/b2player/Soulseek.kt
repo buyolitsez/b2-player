@@ -146,7 +146,7 @@ fun SoulseekScreen(ui: Ui, query: String) {
             Spacer(Modifier.width(8.dp))
             Pill("Clear") { s.picked.clear() }
         }
-        s.busy?.let {
+        s.busy?.takeIf { s.plan == null }?.let {  // the plan dialog shows it itself
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 Text(it, Modifier.padding(start = 12.dp), color = Muted)
