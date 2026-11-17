@@ -281,6 +281,9 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
                 Box {
                     SmallIcon(Icons.Default.MoreVert, Color.White, 22.dp) { menu = true }
                     DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
+                        // The player's shuffle mode, as in Now Playing; turning it off plays the queue in its own order.
+                        DropdownMenuItem({ Text(if (ui.shuffle) "Unshuffle" else "Shuffle") },
+                            { menu = false; ui.controller?.shuffleModeEnabled = !ui.shuffle }, leadingIcon = { Icon(Icons.Default.Shuffle, null) })
                         DropdownMenuItem({ Text("Save as playlist") }, { menu = false; ui.saveQueueAsPlaylist() }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) })
                         DropdownMenuItem({ Text("Clear") }, { menu = false; ui.clearQueue() }, leadingIcon = { Icon(Icons.Default.ClearAll, null) })
                     }
