@@ -98,6 +98,7 @@ class Album(
 }
 
 private val GENRE_SEPARATORS = Regex("[|/,;]")
+private val GENRE_SPELLING = Regex("[-\\s]")
 
 class Folder(val name: String, val path: String) {
     val folders = sortedMapOf<String, Folder>(String.CASE_INSENSITIVE_ORDER)
@@ -112,9 +113,12 @@ class Catalog(val albums: List<Album>) {
         albums.groupBy { it.artist.lowercase() }.values
             .map { list -> list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key to list }
             .sortedBy { it.first.lowercase() }
-    /** Albums by genre tag; albums without one come last under an empty name. */
+    /**
+     * Albums by genre tag; albums without one come last under an empty name. Spellings that differ only in case,
+     * hyphens and spaces ("Post Punk", "Post-punk") are one genre, named by the most common of them.
+     */
     val genres: List<Pair<String, List<Album>>> =
-        albums.flatMap { a -> a.genres.ifEmpty { listOf("") }.map { it to a } }.groupBy { it.first.lowercase() }.values
+        albums.flatMap { a -> a.genres.ifEmpty { listOf("") }.map { it to a } }.groupBy { it.first.lowercase().replace(GENRE_SPELLING, "") }.values
             .map { list -> list.groupingBy { it.first }.eachCount().maxBy { it.value }.key to list.map { it.second }.distinct() }
             .sortedWith(compareBy({ it.first.isEmpty() }, { it.first.lowercase() }))
     val root = Folder("Folders", "").also { root ->
