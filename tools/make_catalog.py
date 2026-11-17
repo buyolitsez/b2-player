@@ -73,6 +73,17 @@ def first(tags, key):
     return v or None
 
 
+def genres(tags):
+    """All genres of a track, "Rock; Indie" or several values of the tag; the app splits them again."""
+    v = tags.get("genre") if tags else None
+    vals = [fix_mojibake(str(x).replace("\x00", "")) for x in (v if isinstance(v, list) else [v] if v else [])]
+    out = []
+    for g in (g.strip() for x in vals for g in re.split(r"[|/,;]", x)):
+        if g and g.lower() not in (o.lower() for o in out):
+            out.append(g)
+    return "; ".join(out) or None
+
+
 def num(v):
     m = re.match(r"\s*(\d+)", v or "")
     return int(m.group(1)) if m else None
@@ -95,8 +106,7 @@ def read_tags(path):
         "track": num(first(t, "tracknumber")),
         "disc": num(first(t, "discnumber")),
         "year": num(first(t, "date") or first(t, "originaldate")),
-        # "Rock; Indie" -> "Rock": one genre per track keeps the app's genre list short.
-        "genre": (first(t, "genre") or "").split(";")[0].strip() or None,
+        "genre": genres(t),
         "duration": round(f.info.length, 3) if f.info and f.info.length else 0,
     }
 

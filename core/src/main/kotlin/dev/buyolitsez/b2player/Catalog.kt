@@ -91,9 +91,13 @@ class Album(
 ) {
     lateinit var tracks: List<Track>
     val duration get() = tracks.sumOf { it.duration }
+    /** "Rock | Hard Rock", "Indie / Pop" and "IDM, Experimental" are several genres; the album is in each. */
+    val genres = genre?.split(GENRE_SEPARATORS)?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
     /** With the genre, so searching "jazz" also finds the jazz albums. */
     val searchKey by lazy { searchFold("$title\u0000$artist\u0000${genre.orEmpty()}") }
 }
+
+private val GENRE_SEPARATORS = Regex("[|/,;]")
 
 class Folder(val name: String, val path: String) {
     val folders = sortedMapOf<String, Folder>(String.CASE_INSENSITIVE_ORDER)
@@ -110,8 +114,8 @@ class Catalog(val albums: List<Album>) {
             .sortedBy { it.first.lowercase() }
     /** Albums by genre tag; albums without one come last under an empty name. */
     val genres: List<Pair<String, List<Album>>> =
-        albums.groupBy { it.genre?.lowercase().orEmpty() }.values
-            .map { list -> list.groupingBy { it.genre.orEmpty() }.eachCount().maxBy { it.value }.key to list }
+        albums.flatMap { a -> a.genres.ifEmpty { listOf("") }.map { it to a } }.groupBy { it.first.lowercase() }.values
+            .map { list -> list.groupingBy { it.first }.eachCount().maxBy { it.value }.key to list.map { it.second }.distinct() }
             .sortedWith(compareBy({ it.first.isEmpty() }, { it.first.lowercase() }))
     val root = Folder("Folders", "").also { root ->
         for (a in albums) {
