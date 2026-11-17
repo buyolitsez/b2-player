@@ -197,16 +197,7 @@ private fun folderPath(tree: Uri): String? {
 @Composable
 fun AccountsScreen(ui: Ui) {
     val app = ui.app
-    // Checking the file of each liked track on the shared storage, and the cache size (it waits for the cache's lock),
-    // can take seconds, so they are worked out off the main thread and the screen shows "…" meanwhile.
-    val sizes by produceState<SettingsSizes?>(null, cat, ui.version) {
-        value = withContext(Dispatchers.IO) {
-            SettingsSizes(
-                cat?.tracks?.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) }.orEmpty(),
-                app.history.all().size, ui.library.cacheBytes(), AppLog.sizeBytes(),
-            )
-        }
-    }
+    ui.version
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = LocalListBottom.current + 24.dp)) {
         ScreenTitle("Accounts")
         SettingsGroup("Backblaze B2") {
