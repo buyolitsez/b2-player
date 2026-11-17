@@ -53,6 +53,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object Accounts : Screen
     data object Assistant : Screen
+    data class SoulseekView(val query: String) : Screen
 }
 
 /** All UI state and actions, shared by the composables. */
@@ -60,6 +61,7 @@ sealed interface Screen {
 class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     val covers = Covers(app)
     val assistant = Assistant(this)
+    val soulseek = Soulseek(this)
     val snackbar = SnackbarHostState()
     val library get() = app.library
     val prefs get() = app.prefs
