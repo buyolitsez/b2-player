@@ -216,6 +216,7 @@ const val NO_GENRE = "No genre"
 fun GenresTab(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
+    // Larger genres first among equal matches, so a typo like "rokc" still shows Rock and not only Acoustic Rock.
     val genres = remember(cat, fq) { cat.genres.filterBy(fq) { searchFold(it.first.ifEmpty { NO_GENRE }) } }
     Column {
         FilterField(ui, q) { q = it }
@@ -276,7 +277,8 @@ fun SearchTab(ui: Ui, cat: Catalog) {
         }
     }
     val (artists, albums, allTracks) = found
-    val genres = remember(cat, fq) { if (fq.folded.length < 2) emptyList() else cat.genres.filter { it.first.isNotEmpty() }.search(fq) { searchFold(it.first) } }
+    // Larger genres first among equal matches, so a typo like "rokc" still shows Rock and not only Acoustic Rock.
+    val genres = remember(cat, fq) { if (fq.folded.length < 2) emptyList() else cat.genres.filter { it.first.isNotEmpty() }.sortedByDescending { it.second.size }.search(fq) { searchFold(it.first) } }
     val tracks = remember(allTracks) { allTracks.take(200) }
     @Composable fun more(n: Int, what: String) {
         if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
