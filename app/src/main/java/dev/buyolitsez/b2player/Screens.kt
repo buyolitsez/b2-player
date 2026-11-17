@@ -276,18 +276,23 @@ fun SearchTab(ui: Ui, cat: Catalog) {
         }
     }
     val (artists, albums, allTracks) = found
+    val genres = remember(cat, fq) { if (fq.folded.length < 2) emptyList() else cat.genres.filter { it.first.isNotEmpty() }.search(fq) { searchFold(it.first) } }
     val tracks = remember(allTracks) { allTracks.take(200) }
     @Composable fun more(n: Int, what: String) {
         if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
     }
     Column {
-        SearchBox(ui.query, { ui.query = it }, "Artist, album or track", Modifier.focusRequester(focus))
+        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", Modifier.focusRequester(focus))
         LazyColumn(contentPadding = listPadding()) {
             if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(20.dp), color = Muted) }
-            else if (q.length >= 2 && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
+            else if (q.length >= 2 && genres.isEmpty() && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
             if (artists.isNotEmpty()) item { SectionTitle("Artists") }
             items(artists.take(10), key = { "r" + it.first }) { (name, albums) -> ArtistRow(ui, name, albums, inTab = Tab.Library) }
             item { more(artists.size - 10, "artists") }
+            if (genres.isNotEmpty()) item { SectionTitle("Genres") }
+            items(genres.take(5), key = { "g" + it.first }) { (name, albums) ->
+                ListRow(Icons.Default.Category, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name), Tab.Library) }
+            }
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
             items(albums.take(30), key = { "a" + it.id }) { AlbumRow(ui, it) }
             item { more(albums.size - 30, "albums") }

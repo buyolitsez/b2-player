@@ -91,7 +91,8 @@ class Album(
 ) {
     lateinit var tracks: List<Track>
     val duration get() = tracks.sumOf { it.duration }
-    val searchKey by lazy { searchFold("$title\u0000$artist") }
+    /** With the genre, so searching "jazz" also finds the jazz albums. */
+    val searchKey by lazy { searchFold("$title\u0000$artist\u0000${genre.orEmpty()}") }
 }
 
 class Folder(val name: String, val path: String) {
