@@ -52,8 +52,11 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     var sleep by remember { mutableStateOf(false) }
     var lyricsOn by remember { mutableStateOf(false) }
-    LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(500) } }
+    var buffered by remember { mutableLongStateOf(0L) }
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
+    // A download or a track cached whole is loaded to the end; the player only buffers some way ahead of it.
+    val whole = remember(t.id, ui.version) { ui.library.isDownloaded(t) || ui.library.isCached(t) }
+    LaunchedEffect(c, whole) { while (true) { pos = c.currentPosition; buffered = if (whole) dur else c.bufferedPosition; delay(500) } }
     val accent = MaterialTheme.colorScheme.primary
     val white = Color.White
     val openMenu = {
@@ -86,10 +89,14 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
             modifier = Modifier.height(20.dp),
             thumb = { Box(Modifier.size(12.dp).background(white, CircleShape)) },
             track = { st ->
-                SliderDefaults.Track(
-                    st, Modifier.height(4.dp), thumbTrackGapSize = 0.dp, drawStopIndicator = null,
-                    colors = SliderDefaults.colors(activeTrackColor = white, inactiveTrackColor = white.copy(alpha = 0.22f)),
-                )
+                Box(contentAlignment = Alignment.CenterStart) {
+                    SliderDefaults.Track(
+                        st, Modifier.height(4.dp), thumbTrackGapSize = 0.dp, drawStopIndicator = null,
+                        colors = SliderDefaults.colors(activeTrackColor = white, inactiveTrackColor = white.copy(alpha = 0.22f)),
+                    )
+                    // How much is loaded, grey over the rest of the track.
+                    Box(Modifier.fillMaxWidth((buffered.toFloat() / dur).coerceIn(0f, 1f)).height(4.dp).clip(CircleShape).background(white.copy(alpha = 0.25f)))
+                }
             },
         )
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
