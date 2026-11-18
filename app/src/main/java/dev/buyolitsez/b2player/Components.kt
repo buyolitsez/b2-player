@@ -6,10 +6,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -405,7 +412,7 @@ fun AddToPlaylistDialog(ui: Ui) {
             }
         },
         confirmButton = {
-            TextButton({ ui.createPlaylist(name, tracks); ui.toast("Playlist created"); ui.addToPlaylist = null }, enabled = name.isNotBlank()) { Text("Create") }
+            TextButton({ ui.createPlaylist(name, tracks); ui.addToPlaylist = null }, enabled = name.isNotBlank()) { Text("Create") }
         },
         dismissButton = { TextButton({ ui.addToPlaylist = null }) { Text(if (single != null) "Done" else "Cancel") } },
     )
@@ -414,11 +421,13 @@ fun AddToPlaylistDialog(ui: Ui) {
 @UnstableApi
 @Composable
 /** [showArtist] false shows the year under each album instead, for a screen of one artist. */
-fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null, showArtist: Boolean = true) {
+fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = null, showArtist: Boolean = true, label: ((Album) -> String?)? = null) {
     val cols = ui.prefs.gridColumns.value
-    if (ui.prefs.albumGrid.value) {
+    val offset = if (header != null) 1 else 0
+    if (ui.prefs.albumGrid.value) Box {
+        val state = rememberLazyGridState()
         LazyVerticalGrid(
-            GridCells.Fixed(cols), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = LocalListBottom.current + 12.dp),
+            GridCells.Fixed(cols), state = state, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = LocalListBottom.current + 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             if (header != null) item(span = { GridItemSpan(cols) }) { header() }
@@ -436,11 +445,14 @@ fun AlbumGrid(ui: Ui, albums: List<Album>, header: (@Composable () -> Unit)? = n
                 }
             }
         }
-    } else {
-        LazyColumn(contentPadding = listPadding()) {
+        FastScroller(albums.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { label?.invoke(albums[it]) }, offset)
+    } else Box {
+        val state = rememberLazyListState()
+        LazyColumn(state = state, contentPadding = listPadding()) {
             if (header != null) item { Box(Modifier.padding(horizontal = 20.dp)) { header() } }
             items(albums, key = { it.id }) { AlbumRow(ui, it, if (showArtist) null else it.year?.toString() ?: "") }
         }
+        FastScroller(albums.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { label?.invoke(albums[it]) }, offset)
     }
 }
 
@@ -512,3 +524,44 @@ fun ListRow(icon: ImageVector?, title: String, subtitle: String?, trailing: (@Co
         trailing?.invoke()
     }
 }
+
+/**
+ * Fast scrolling for a long list: dragging along its right edge jumps to that share of the list, and a bubble
+ * shows where it is, e.g. the artist's letter. Lay it over the list. [count] is the number of the list's own
+ * items, which start at [offset] (after a header); [label] names the item at an index, null for no bubble.
+ */
+@Composable
+fun FastScroller(count: Int, firstVisible: () -> Int, scrollTo: suspend (Int) -> Unit, label: (Int) -> String?, offset: Int = 0) {
+    if (count < 50) return
+    val scope = rememberCoroutineScope()
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val accent = MaterialTheme.colorScheme.primary
+    BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = LocalListBottom.current)) {
+        val height = constraints.maxHeight.toFloat()
+        val thumb = with(LocalDensity.current) { 44.dp.toPx() }
+        fun jump(y: Float) {
+            val f = (y / height).coerceIn(0f, 1f)
+            drag = f
+            scope.launch { scrollTo((f * (count - 1)).toInt() + offset) }
+        }
+        val share = drag ?: ((firstVisible() - offset).toFloat() / (count - 1)).coerceIn(0f, 1f)
+        val y = ((height - thumb) * share).toInt()
+        Box(
+            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(24.dp).pointerInput(count) {
+                detectVerticalDragGestures(onDragStart = { jump(it.y) }, onDragEnd = { drag = null }, onDragCancel = { drag = null }) { change, _ -> jump(change.position.y) }
+            },
+        ) {
+            Box(Modifier.offset { IntOffset(0, y) }.align(Alignment.TopEnd).padding(end = 3.dp).size(4.dp, 44.dp).clip(CircleShape)
+                .background(if (drag != null) accent else Muted.copy(alpha = 0.5f)))
+        }
+        val text = drag?.let { label((it * (count - 1)).toInt()) }
+        if (text != null) Box(
+            Modifier.offset { IntOffset(0, y) }.align(Alignment.TopEnd).padding(end = 40.dp).widthIn(min = 56.dp).height(56.dp)
+                .clip(RoundedCornerShape(28.dp)).background(accent).padding(horizontal = 14.dp),
+            Alignment.Center,
+        ) { Text(text, style = MaterialTheme.typography.titleLarge, color = Color.Black, maxLines = 1) }
+    }
+}
+
+/** The first letter or digit of [s], upper case, for [FastScroller]; "#" when it starts with neither. */
+fun initial(s: String) = s.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.let { if (it.isDigit()) "#" else it.toString() } ?: "#"

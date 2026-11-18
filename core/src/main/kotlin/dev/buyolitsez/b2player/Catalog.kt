@@ -145,6 +145,36 @@ class Catalog(val albums: List<Album>) {
 
 data class Playlist(val id: String, val name: String, val trackIds: List<String>, val updated: Long)
 
+/**
+ * Three-way merge of playlists: the phone's unsent edits meet the ones made elsewhere (cmus) since the last sync,
+ * [base]. A playlist changed on one side takes that side, also when it was deleted there. Changed on both, it keeps
+ * the local name and order, minus the tracks the other side removed, plus the ones it added. A playlist deleted on
+ * one side and edited on the other stays.
+ */
+fun mergePlaylists(base: List<Playlist>, local: List<Playlist>, remote: List<Playlist>): List<Playlist> {
+    val b = base.associateBy { it.id }; val l = local.associateBy { it.id }; val r = remote.associateBy { it.id }
+    fun same(x: Playlist?, y: Playlist?) = x?.name == y?.name && x?.trackIds == y?.trackIds
+    return (local.map { it.id } + remote.map { it.id }).distinct().mapNotNull { id ->
+        val was = b[id]; val mine = l[id]; val theirs = r[id]
+        when {
+            same(mine, was) -> theirs
+            same(theirs, was) -> mine
+            mine == null -> theirs
+            theirs == null -> mine
+            else -> {
+                val before = was?.trackIds.orEmpty()
+                val removed = before.toSet() - theirs.trackIds.toSet()
+                val added = theirs.trackIds.filter { it !in before && it !in mine.trackIds }
+                mine.copy(
+                    name = if (mine.name != was?.name) mine.name else theirs.name,
+                    trackIds = mine.trackIds.filter { it !in removed } + added,
+                    updated = maxOf(mine.updated, theirs.updated),
+                )
+            }
+        }
+    }
+}
+
 data class Play(val trackId: String, val time: Long)
 
 fun formatTime(sec: Double): String {

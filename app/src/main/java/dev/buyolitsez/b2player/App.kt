@@ -51,7 +51,7 @@ class Prefs(context: Context) {
     // Playback
     val prefetchCount = Num("prefetchCount", 3)
     val restoreQueue = Bool("restoreQueue", true)
-    val undoReplace = Bool("undoReplace", true)
+    val undoReplace = Bool("undoReplace", false)
     /** A [LikeFilter] name. */
     val queueFilter = Str("queueFilter", "All")
     /** A [LikeFilter] name for the library, see [Ui.libraryFilter]. */

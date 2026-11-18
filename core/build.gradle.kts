@@ -10,4 +10,5 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 dependencies {
     api("com.anthropic:anthropic-java:3.8.0")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    testImplementation(kotlin("test-junit"))
 }

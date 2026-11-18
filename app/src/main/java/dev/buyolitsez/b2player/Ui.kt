@@ -186,7 +186,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun shows(t: Track) = libraryFilter.keeps(t)
     fun setLibraryFilter(f: LikeFilter) {
         prefs.libraryFilter.set(f.name)
-        toast(when (f) { LikeFilter.All -> "Showing all tracks"; LikeFilter.Liked -> "Showing liked tracks only"; LikeFilter.NotLiked -> "Showing tracks that aren't liked" })
     }
 
     /** [cat] with only the tracks [libraryFilter] keeps; albums left without tracks are dropped. */
@@ -223,11 +222,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         return SavedQueue("", queueIds, c.currentMediaItemIndex, c.currentPosition)
     }
 
-    private fun restore(q: SavedQueue, play: Boolean, shuffle: Boolean? = null) {
-        val c = controller ?: return
-        val cat = app.catalog.value ?: return
-        val items = q.ids.mapNotNull { cat.byId[it] }.map { library.mediaItem(it) }
-        if (items.isEmpty()) return
+    private fun restore(q: SavedQueue, play: Boolean, shuffle: Boolean? = null) = scope.launch {
+        val c = controller ?: return@launch
+        val cat = app.catalog.value ?: return@launch
+        val items = withContext(Dispatchers.IO) { q.ids.mapNotNull { cat.byId[it] }.map { library.mediaItem(it) } }
+        if (items.isEmpty() || controller !== c) return@launch
         library.queueSource = q.ids
         if (shuffle != null) c.shuffleModeEnabled = shuffle
         c.setMediaItems(items, q.index.coerceIn(0, items.size - 1), q.positionMs)
@@ -259,8 +258,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val start = index.coerceIn(0, tracks.size - 1)
         val before = snapshot()
         val wasShuffled = c.shuffleModeEnabled
-        // "Shuffle" turns shuffle on; a plain play keeps whatever mode the player is in.
-        if (shuffled) c.shuffleModeEnabled = true
+        // "Shuffle" turns shuffle on, a plain play turns it off: an album started with Play plays in order.
+        c.shuffleModeEnabled = shuffled
         AppLog.d("ui", "Play ${tracks.size} tracks from ${tracks.first().album.dir}, start $start, shuffle $shuffled")
         // A file check per track: for a 2600-track list that is too slow for the main thread.
         val items = withContext(Dispatchers.IO) { tracks.map { library.mediaItem(it) } }
@@ -279,22 +278,24 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         }
     }
 
-    fun playNext(tracks: List<Track>) {
-        val c = controller ?: return
-        if (c.mediaItemCount == 0) { play(tracks); return }
+    fun playNext(tracks: List<Track>) = scope.launch {
+        val c = controller ?: return@launch
+        if (c.mediaItemCount == 0) { play(tracks); return@launch }
+        val items = withContext(Dispatchers.IO) { tracks.filter { passes(it) }.map { library.mediaItem(it) } }
+        if (controller !== c) return@launch
         val src = source()
         val at = src.indexOf(currentId) + 1
         library.queueSource = src.take(at) + tracks.map { it.id } + src.drop(at)
-        c.addMediaItems(c.currentMediaItemIndex + 1, tracks.filter { passes(it) }.map { library.mediaItem(it) })
-        toast(if (tracks.size == 1) "Playing next: ${tracks[0].title}" else "Playing next: ${tracks.size} tracks")
+        c.addMediaItems(c.currentMediaItemIndex + 1, items)
     }
 
-    fun addToEnd(tracks: List<Track>) {
-        val c = controller ?: return
-        if (c.mediaItemCount == 0) { play(tracks); return }
+    fun addToEnd(tracks: List<Track>) = scope.launch {
+        val c = controller ?: return@launch
+        if (c.mediaItemCount == 0) { play(tracks); return@launch }
+        val items = withContext(Dispatchers.IO) { tracks.filter { passes(it) }.map { library.mediaItem(it) } }
+        if (controller !== c) return@launch
         library.queueSource = source() + tracks.map { it.id }
-        c.addMediaItems(tracks.filter { passes(it) }.map { library.mediaItem(it) })
-        toast(if (tracks.size == 1) "Added to queue: ${tracks[0].title}" else "Added to queue: ${tracks.size} tracks")
+        c.addMediaItems(items)
     }
 
     private var lastSwipe = 0L
@@ -427,7 +428,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val name = first?.let { "${it.album.artist} — ${it.album.title}" } ?: "Queue"
         library.savedQueues = listOf(q.copy(name = name)) + library.savedQueues.take(9)
         version++
-        toast("Queue saved for later")
     }
 
     fun resumeSaved(i: Int) {
@@ -451,7 +451,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val on = !prefs.liteStreaming.value
         prefs.liteStreaming.set(on)
         controller?.sendCustomCommand(LITE, Bundle.EMPTY)
-        toast(if (on) "Lite streaming: Opus 128 kbps" else "Original quality")
     }
 
     fun toggleLike(t: Track) = setLiked(listOf(t), !library.isLiked(t))
@@ -462,7 +461,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val todo = tracks.filter { !library.isDownloaded(it) }
         if (todo.isEmpty()) { toast("Already downloaded"); return }
         DownloadWorker.enqueue(context, name, title, todo, wifiOnly = prefs.manualWifiOnly.value)
-        toast("Downloading ${todo.size} tracks, ${formatSize(todo.distinctBy { it.path }.sumOf { it.size })}")
     }
 
     /** Whether the download folder can be used, see [hasStorageAccess]; checked when the app comes back to the screen. */
@@ -502,7 +500,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun addToPlaylist(p: Playlist, tracks: List<Track>) {
         app.playlists.add(p.id, tracks.map { it.id })
         version++; syncPlaylists()
-        toast("Added to ${p.name}")
     }
 
     fun removeFromPlaylist(p: Playlist, t: Track) = editPlaylist(p.id) { pl -> pl.copy(trackIds = pl.trackIds.filter { it != t.id }) }
@@ -511,9 +508,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun deletePlaylist(id: String) { app.playlists.delete(id); version++; syncPlaylists() }
 
     fun deleteFromBucket(tracks: List<Track>) = scope.launch {
-        toast("Deleting…")
         runCatching { withContext(Dispatchers.IO) { app.deleteFromBucket(tracks) } }
-            .onSuccess { n -> version++; toast(if (n == 1) "Deleted 1 track" else "Deleted $n tracks") }
+            .onSuccess { version++ }
             .onFailure { AppLog.e("delete", "Delete from bucket failed", it); toast("Couldn't delete: ${it.message}") }
     }
 
@@ -550,7 +546,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         if (tracks.isEmpty()) return
         val first = tracks[currentIndex.coerceIn(0, tracks.size - 1)]
         createPlaylist("Queue: ${first.album.artist}", tracks)
-        toast("Saved as playlist")
     }
 
     private var playlistSync: Job? = null

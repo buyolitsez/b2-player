@@ -44,7 +44,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val paths = inputData.getStringArray("paths").orEmpty().distinct()
         val title = inputData.getString("title").orEmpty()
         val first = inputData.getInt("first", 0); val all = inputData.getInt("all", paths.size)
-        var failed = 0
+        val failed = mutableListOf<String>()
         _progress.update { m -> m + paths.filter { it !in m && !app.library.offlineFile(it).exists() }.associateWith { 0f } }
         // Android doesn't let a worker that starts in the background (a like synced from the computer) become a
         // foreground service: then it runs as a plain job, without the notification.
@@ -70,18 +70,35 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                                 shown = now; notify(applicationContext, NOTIFICATION, notification(title, first + i, all, f))
                             }
                         }
-                    } catch (e: Exception) { failed++; AppLog.w("download", "Failed: $p", e) }
+                    } catch (e: Exception) { if (!isStopped) failed += p; AppLog.w("download", "Failed: $p", e) }
                 }
                 _progress.update { it - p }
             }
         } finally {
             _progress.update { it - paths.toSet() }
         }
-        AppLog.i("download", "$title: ${paths.size - failed} of ${paths.size} done, attempt ${runAttemptCount + 1}")
-        val retry = failed > 0 && runAttemptCount < 3
+        AppLog.i("download", "$title: ${paths.size - failed.size} of ${paths.size} done, attempt ${runAttemptCount + 1}")
+        val retry = failed.isNotEmpty() && runAttemptCount < 3
+        if (failed.isNotEmpty() && !retry) notifyFailed(title, failed)
         // A swiped notification stays away also while the work waits for the network to come back.
         if (!retry && _progress.value.isEmpty()) hidden = false
         if (retry) Result.retry() else Result.success()
+    }
+
+    /** The last attempt left tracks undownloaded: says so, with Retry, instead of leaving them silently. */
+    private fun notifyFailed(title: String, paths: List<String>) {
+        val ctx = applicationContext
+        val retry = PendingIntent.getBroadcast(
+            ctx, FAILED, Intent(ctx, RetryReceiver::class.java).putExtra("title", title).putExtra("paths", paths.toTypedArray()),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Couldn't download $title")
+            .setContentText(if (paths.size == 1) "1 track failed" else "${paths.size} tracks failed")
+            .setContentIntent(PendingIntent.getActivity(ctx, FAILED, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+            .addAction(0, "Retry", retry).setAutoCancel(true)
+            .build()
+        notify(ctx, FAILED, n)
     }
 
     private fun notification(title: String, done: Int, all: Int, share: Float): Notification {
@@ -102,6 +119,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         const val TAG = "download"
         private const val CHANNEL = "downloads"
         const val NOTIFICATION = 3
+        const val FAILED = 4
 
         /** The notification was swiped away: it isn't shown again until the downloads in progress end. */
         @Volatile var hidden = false
@@ -173,6 +191,18 @@ class DismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.getIntExtra("id", 0) == DownloadWorker.NOTIFICATION) DownloadWorker.hidden = true
         else (context.applicationContext as App).updates.hidden = true
+    }
+}
+
+/** Retry on the "Couldn't download" notification: downloads the tracks that failed again. */
+@UnstableApi
+class RetryReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        NotificationManagerCompat.from(context).cancel(DownloadWorker.FAILED)
+        val paths = intent.getStringArrayExtra("paths").orEmpty().toSet()
+        val title = intent.getStringExtra("title").orEmpty()
+        val tracks = (context.applicationContext as App).catalog.value?.tracks?.filter { it.path in paths }.orEmpty()
+        if (tracks.isNotEmpty()) DownloadWorker.enqueue(context, "retry:$title", title, tracks)
     }
 }
 
