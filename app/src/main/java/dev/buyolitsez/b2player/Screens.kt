@@ -326,10 +326,30 @@ fun PlayButtons(
     val allDownloaded = remember(tracks, ui.version, dl == null) { tracks.isNotEmpty() && tracks.all { ui.library.isDownloaded(it) } }
     var open by remember { mutableStateOf(false) }
     val close = { open = false }
+    // A whole album or playlist is a lot of data: downloading and removing it are confirmed with its size.
+    var confirm by remember { mutableStateOf(false) }
+    if (confirm) {
+        val (n, size) = remember(tracks) {
+            val todo = tracks.filter { allDownloaded || !ui.library.isDownloaded(it) }
+            todo.size to todo.distinctBy { it.path }.sumOf { it.size }
+        }
+        val what = "${if (n == 1) "1 track" else "$n tracks"}, ${formatSize(size)}"
+        AlertDialog(
+            { confirm = false }, containerColor = Gray2,
+            title = { Text(if (allDownloaded) "Remove the download of “$title”?" else "Download “$title”?") },
+            text = { Text(if (allDownloaded) "$what. The tracks stay in your library." else what) },
+            confirmButton = {
+                TextButton({ confirm = false; if (allDownloaded) ui.deleteDownloads(tracks) else ui.download(key, title, tracks) }) {
+                    Text(if (allDownloaded) "Remove" else "Download")
+                }
+            },
+            dismissButton = { TextButton({ confirm = false }) { Text("Cancel") } },
+        )
+    }
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (dl != null) Box(Modifier.size(44.dp).clip(CircleShape).clickable { ui.open(Screen.Downloads) }, Alignment.Center) { DownloadRing(dl, 24.dp, MaterialTheme.colorScheme.primary) }
-        else if (allDownloaded) SmallIcon(Icons.Default.DownloadDone, MaterialTheme.colorScheme.primary, 24.dp) { ui.deleteDownloads(tracks) }
-        else SmallIcon(Icons.Default.Download, Color(0xFFC9C9C9), 24.dp) { ui.download(key, title, tracks) }
+        else if (allDownloaded) SmallIcon(Icons.Default.DownloadDone, MaterialTheme.colorScheme.primary, 24.dp) { confirm = true }
+        else SmallIcon(Icons.Default.Download, Color(0xFFC9C9C9), 24.dp) { confirm = true }
         SmallIcon(Icons.AutoMirrored.Filled.PlaylistAdd, Color(0xFFC9C9C9), 24.dp) { ui.addToPlaylist = tracks }
         Box {
             SmallIcon(Icons.Default.MoreHoriz, Color(0xFFC9C9C9), 24.dp) { open = true }
