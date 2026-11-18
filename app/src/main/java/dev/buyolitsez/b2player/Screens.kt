@@ -79,9 +79,19 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
                     ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value)
                 }
             }
+        }, label = { a ->
+            when (sort) {
+                AlbumSort.Artist -> initial(a.artist)
+                AlbumSort.Recent -> monthLabel(a.added * 1000)
+                AlbumSort.Rating -> ui.rating(a)?.let { formatRating(it) }
+                AlbumSort.Liked -> null
+            }
         })
     }
 }
+
+/** "Nov 2026": where the fast scroller is in a list newest first. */
+private fun monthLabel(ms: Long) = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH))
 
 /** Epoch ms from which "Recently added" and "Recently liked" keep things, for a period of [days]; 0 keeps all. */
 private fun since(days: Int) = if (days > 0) System.currentTimeMillis() - days * 86_400_000L else 0L
@@ -163,19 +173,29 @@ fun TracksTab(ui: Ui, cat: Catalog) {
     val fq = remember(q) { Query(q) }
     val days = ui.prefs.recentDays.value
     val tracks = remember(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
+    val state = rememberLazyListState()
     Column {
         FilterField(ui, q) { q = it }
-        LazyColumn(contentPadding = listPadding()) {
-            item {
-                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
-                    Spacer(Modifier.weight(1f))
-                    Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
-                    if (sort != TrackSort.Artist) PeriodButton(ui)
+        Box {
+            LazyColumn(state = state, contentPadding = listPadding()) {
+                item {
+                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
+                        Spacer(Modifier.weight(1f))
+                        Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        if (sort != TrackSort.Artist) PeriodButton(ui)
+                    }
                 }
+                if (tracks.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
+                itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
             }
-            if (tracks.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
+            FastScroller(tracks.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { i ->
+                when (sort) {
+                    TrackSort.Artist -> initial(tracks[i].album.artist)
+                    TrackSort.Recent -> monthLabel(tracks[i].album.added * 1000)
+                    TrackSort.Liked -> null
+                }
+            }, offset = 1)
         }
     }
 }
@@ -188,9 +208,13 @@ fun ArtistsTab(ui: Ui, cat: Catalog) {
     val artists = remember(cat, fq) { cat.artists.filterBy(fq) { searchFold(it.first) } }
     Column {
         FilterField(ui, q) { q = it }
-        LazyColumn(contentPadding = listPadding()) {
-            if (artists.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
-            items(artists, key = { it.first }) { (name, albums) -> ArtistRow(ui, name, albums) }
+        val state = rememberLazyListState()
+        Box {
+            LazyColumn(state = state, contentPadding = listPadding()) {
+                if (artists.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
+                items(artists, key = { it.first }) { (name, albums) -> ArtistRow(ui, name, albums) }
+            }
+            FastScroller(artists.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { initial(artists[it].first) })
         }
     }
 }
