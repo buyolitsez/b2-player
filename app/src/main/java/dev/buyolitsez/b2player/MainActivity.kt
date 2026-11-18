@@ -231,7 +231,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
             containerColor = UiColor.Transparent,
             topBar = {
                 val root = screen == Screen.Root
-                TopAppBar(
+                if (ui.selection.isNotEmpty()) SelectionBar(ui, screen)
+                else TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = UiColor.Transparent, scrolledContainerColor = UiColor.Transparent),
                     title = {
                         val title = when (screen) {
