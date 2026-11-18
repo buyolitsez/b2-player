@@ -512,8 +512,8 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
                 ReorderableItem(reorder, key = keys[i], enabled = drag) {
                     TrackRow(
                         ui, t, showCover = true, onClick = { ui.play(shownTracks, pos) },
+                        // Long press on the row selects it, so only the handle drags.
                         dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null,
-                        dragModifier = if (drag) longPressDrag() else Modifier,
                         onSwipeLeft = { dropAt(i) }, swipeLeftLabel = "Remove from playlist",
                         extraMenu = { close -> MenuItem("Remove from playlist", Icons.Default.RemoveCircleOutline, close) { dropAt(i) } },
                     )

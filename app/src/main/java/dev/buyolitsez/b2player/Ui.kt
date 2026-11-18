@@ -70,7 +70,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var tab by mutableStateOf(startTab())
     var section by mutableStateOf(LibrarySection.entries.firstOrNull { it.name == prefs.librarySection.value } ?: LibrarySection.Albums)
         private set
-    fun showSection(s: LibrarySection) { section = s; prefs.librarySection.set(s.name) }
+    fun showSection(s: LibrarySection) { section = s; selection = emptyList(); prefs.librarySection.set(s.name) }
     /** Now playing, and the queue on top of it, cover the tabs. */
     var nowOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
@@ -94,6 +94,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var deleting by mutableStateOf<DeleteRequest?>(null)
     /** The "New playlist" dialog is open. */
     var newPlaylist by mutableStateOf(false)
+    /** Tracks picked by long press, in the order picked; the top bar shows their actions. Cleared when the screen changes. */
+    var selection by mutableStateOf(listOf<Track>())
+    fun toggleSelected(t: Track) { selection = if (selection.any { it.id == t.id }) selection.filter { it.id != t.id } else selection + t }
 
     init {
         // Likes from here and from the media notification re-read the lists.
@@ -138,7 +141,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun stack(t: Tab = tab) = stacks[t] ?: listOf(Screen.Root)
     /** Opening a screen closes Now playing; [section] also switches the Library tab to it. */
     fun open(s: Screen, inTab: Tab? = null, section: LibrarySection? = null) {
-        nowOpen = false; queueOpen = false
+        nowOpen = false; queueOpen = false; selection = emptyList()
         val from = tab
         if (inTab != null) tab = inTab
         if (section != null) showSection(section)
@@ -150,6 +153,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun back(): Boolean {
         if (queueOpen) { queueOpen = false; return true }
         if (nowOpen) { nowOpen = false; return true }
+        if (selection.isNotEmpty()) { selection = emptyList(); return true }
         val st = stack()
         if (st.size > 1) {
             stacks[tab] = st.dropLast(1)
@@ -161,7 +165,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         return false
     }
     fun selectTab(t: Tab) {
-        returnTo = null
+        returnTo = null; selection = emptyList()
         if (t == tab && stack().size > 1) stacks[t] = listOf(Screen.Root) else tab = t
     }
 

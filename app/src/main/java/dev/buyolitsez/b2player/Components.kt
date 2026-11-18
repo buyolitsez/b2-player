@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,7 +35,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -188,9 +191,15 @@ fun TrackRow(
 ) {
     val active = if (queueIndex != null) queueIndex == ui.currentIndex else t.id == ui.currentId
     val accent = MaterialTheme.colorScheme.primary
+    // Long press picks tracks for the actions in the top bar; the queue has its own long press, dragging.
+    val selecting = queueIndex == null && ui.selection.isNotEmpty()
+    val selected = selecting && ui.selection.any { it.id == t.id }
+    val haptic = LocalHapticFeedback.current
+    val click = if (queueIndex != null) Modifier.clickable(onClick = onClick)
+        else Modifier.combinedClickable(onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ui.toggleSelected(t) }, onClick = { if (selecting) ui.toggleSelected(t) else onClick() })
     val row = @Composable {
         Row(
-            Modifier.fillMaxWidth().then(dragModifier).clickable(onClick = onClick).padding(start = if (dragHandle != null) 0.dp else 20.dp, end = 4.dp).height(60.dp),
+            Modifier.fillMaxWidth().then(dragModifier).then(click).background(if (selected) SwipeRow else Color.Transparent).padding(start = if (dragHandle != null) 0.dp else 20.dp, end = 4.dp).height(60.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             dragHandle?.invoke()
@@ -209,10 +218,14 @@ fun TrackRow(
             if (ui.liked(t)) Icon(Icons.Default.Favorite, null, Modifier.padding(start = 6.dp).size(14.dp), tint = accent)
             DownloadMark(ui, t)
             Text(formatTime(t.duration), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
-            SmallIcon(Icons.Default.MoreVert, size = 18.dp) { ui.trackMenu = Ui.TrackMenuRequest(t, queueIndex, extraMenu) }
+            if (selecting) Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked, null,
+                Modifier.padding(13.dp).size(18.dp), tint = if (selected) accent else Muted,
+            )
+            else SmallIcon(Icons.Default.MoreVert, size = 18.dp) { ui.trackMenu = Ui.TrackMenuRequest(t, queueIndex, extraMenu) }
         }
     }
-    if (!ui.prefs.swipeActions.value) { row(); return }
+    if (!ui.prefs.swipeActions.value || selecting) { row(); return }
     // The state is remembered with the lambda it was created with, so the action goes through
     // rememberUpdatedState: otherwise it uses the track and queue index of the row's first composition.
     val onSwipe by rememberUpdatedState { v: SwipeToDismissBoxValue ->
@@ -245,6 +258,45 @@ fun TrackRow(
             if (toRight) Alignment.CenterStart else Alignment.CenterEnd,
         ) { Text(label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge) }
     }) { row() }
+}
+
+/** The top bar while tracks are selected: their count and actions; any action ends the selection. */
+@UnstableApi
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SelectionBar(ui: Ui, screen: Screen) {
+    val sel = ui.selection
+    val n = if (sel.size == 1) "1 track" else "${sel.size} tracks"
+    fun act(action: () -> Unit) { ui.selection = emptyList(); action() }
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+        navigationIcon = { IconButton({ ui.selection = emptyList() }) { Icon(Icons.Default.Close, "Cancel selection") } },
+        title = { Text("${sel.size} selected", style = MaterialTheme.typography.titleLarge) },
+        actions = {
+            IconButton({ act { ui.addToPlaylist = sel } }) { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to playlist") }
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
+                DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
+                    @Composable fun item(text: String, icon: ImageVector, action: () -> Unit) =
+                        DropdownMenuItem({ Text(text) }, { menu = false; act(action) }, leadingIcon = { Icon(icon, null) })
+                    item("Play", Icons.Default.PlayArrow) { ui.play(sel) }
+                    item("Play next", Icons.AutoMirrored.Filled.PlaylistPlay) { ui.playNext(sel) }
+                    item("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) { ui.addToEnd(sel) }
+                    item("Add to playlist", Icons.AutoMirrored.Filled.PlaylistAdd) { ui.addToPlaylist = sel }
+                    if (screen is Screen.PlaylistView) item("Remove from playlist", Icons.Default.RemoveCircleOutline) {
+                        val ids = sel.map { it.id }.toSet()
+                        ui.editPlaylist(screen.id) { pl -> pl.copy(trackIds = pl.trackIds.filter { it !in ids }) }
+                    }
+                    if (sel.all { ui.liked(it) }) item("Remove like", Icons.Outlined.FavoriteBorder) { ui.setLiked(sel, false) }
+                    else item("Like", Icons.Default.Favorite) { ui.setLiked(sel, true) }
+                    if (sel.all { ui.downloaded(it) }) item("Remove download", Icons.Default.Delete) { ui.deleteDownloads(sel) }
+                    else item("Download", Icons.Default.Download) { ui.download("selection:" + sel.joinToString(",") { it.id }.hashCode(), n, sel) }
+                    item("Delete from bucket", Icons.Default.DeleteForever) { ui.deleting = Ui.DeleteRequest(n, sel, false) }
+                }
+            }
+        },
+    )
 }
 
 /** The actions sheet of [Ui.trackMenu], one for the whole app. */
