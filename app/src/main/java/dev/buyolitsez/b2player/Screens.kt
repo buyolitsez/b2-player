@@ -36,6 +36,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -606,7 +611,13 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
     val plays = remember(ui.version) { ui.app.history.all() }
     val since = period.days?.let { System.currentTimeMillis() - it * 86_400_000L } ?: 0L
     val inPeriod = remember(plays, period) { plays.filter { it.time >= since } }
-    val recent = remember(plays) { plays.asReversed().map { it.trackId }.distinct().take(30).mapNotNull { cat.byId[it] } }
+    // Every play of the period by day, newest first, for "what was that yesterday evening".
+    val days = remember(inPeriod) {
+        val zone = ZoneId.systemDefault()
+        inPeriod.asReversed().distinctBy { it.time to it.trackId }
+            .mapNotNull { p -> cat.byId[p.trackId]?.let { p.time to it } }
+            .groupBy { (time, _) -> Instant.ofEpochMilli(time).atZone(zone).toLocalDate() }.toList()
+    }
     val topTracks = remember(inPeriod) {
         inPeriod.groupingBy { it.trackId }.eachCount().entries.sortedByDescending { it.value }.take(10)
             .mapNotNull { (id, n) -> cat.byId[id]?.let { it to n } }
@@ -641,8 +652,25 @@ fun HistoryScreen(ui: Ui, cat: Catalog) {
         items(topArtists, key = { "a" + it.key }) { (name, n) -> ArtistRow(ui, name, albumsOf[name].orEmpty(), plays(n), Tab.Library) }
         if (forgotten.isNotEmpty()) item { SectionTitle("Haven't played in a while") }
         items(forgotten, key = { "f" + it.id }) { a -> AlbumRow(ui, a) }
-        if (recent.isNotEmpty()) item { SectionTitle("Recently played") }
-        itemsIndexed(recent.take(10), key = { _, t -> "r" + t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(recent, i) }) }
+        days.forEach { (day, entries) ->
+            item(key = "d$day") { SectionTitle(dayLabel(day)) }
+            // A tap plays on from that track in the order it was listened to then.
+            val inOrder = entries.asReversed().map { it.second }
+            itemsIndexed(entries, key = { _, (time, t) -> "h$time${t.id}" }) { i, (time, t) ->
+                TrackRow(ui, t, showCover = true, onClick = { ui.play(inOrder, entries.size - 1 - i) }, subtitle = "${clock.format(Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()))} · ${t.artist}")
+            }
+        }
+    }
+}
+
+private val clock = DateTimeFormatter.ofPattern("HH:mm")
+
+private fun dayLabel(day: LocalDate): String {
+    val today = LocalDate.now()
+    return when (day) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> day.format(DateTimeFormatter.ofPattern(if (day.year == today.year) "EEEE, d MMMM" else "d MMMM yyyy", Locale.ENGLISH))
     }
 }
 
