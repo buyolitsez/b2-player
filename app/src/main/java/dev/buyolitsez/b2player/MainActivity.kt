@@ -59,6 +59,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
@@ -198,7 +199,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     BackHandler {
         if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
-    LaunchedEffect(screen, ui.tab, ui.section) { ui.filterOpen = false }
+    // Leaving a screen closes its search field and the keyboard, which would otherwise stay over the next screen.
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { ui.filterOpen = false; focusManager.clearFocus(); keyboard?.hide() }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
     LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
