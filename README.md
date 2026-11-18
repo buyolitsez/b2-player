@@ -26,7 +26,7 @@ prepared in advance by a script on the computer that holds the library.
   state/playlists.json     playlists
   state/ratings.json       album ratings 1-10 (from the listening diary, and set in the app or cmus)
   state/history.tsv        listening history: time and track id
-  state/now-playing.json   last track, queue and position on the phone or in cmus, for "Continue from arch"
+  state/now-playing.json   the shared queue: played tracks, current track, the rest and the position, from the phone or cmus
   state/tags.json          tag edits made on the phone, not yet written to files
   logs/<date>.log          phone log after errors
 ```
@@ -114,10 +114,11 @@ ALAC and anything else the platform can't decode goes through `org.jellyfin.medi
   `times` keeps when each track in `added` was liked (epoch ms), for "Recently liked"; cmus doesn't write it,
   so the phone stamps likes from cmus when it first sees them and puts dropped times back.
 
-- Continue listening: on play, pause and track change the phone writes the track, the queue from it on
-  (up to 200 tracks, in play order) and the position to `state/now-playing.json` (cmus does the same with
-  `contrib/cmus-b2-now` in the cmus fork). When cmus played after the phone, a "Continue from arch" bar above
-  the mini player resumes that queue at that position, with shuffle off.
+- One queue on the phone and in cmus: on play, pause and track change the phone writes the tracks played
+  before (up to 100), the current one, the ones after it (up to 200, in play order) and the position to
+  `state/now-playing.json` (cmus does the same with `contrib/cmus-b2-now` in the cmus fork). When cmus played
+  after the phone and the phone is not playing, the app takes that queue over, paused at that track and
+  position, with shuffle off; Play goes on from there. A different queue the phone had goes to the saved queues.
 
 - Playlists, `.m3u` import (e.g. from Musicolet): tracks are matched by file name and folder, then by `#EXTINF` "artist - title".
 - A play counts after half the track or 4 minutes (tracks shorter than 30 s don't count); the same rule applies

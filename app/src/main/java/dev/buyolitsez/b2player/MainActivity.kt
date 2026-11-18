@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
             startActivity(batteryExemptionIntent(this))
         }
         ui.refreshCatalog()
-        // Likes and ratings made in cmus, and what it played for the Resume banner, show up on return to the app and every minute while it is on screen.
+        // Likes and ratings made in cmus, and the queue it played, show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
@@ -187,6 +187,9 @@ private val tabIcons: Map<Tab, ImageVector> = mapOf(
 @Composable
 fun Root(ui: Ui, importM3u: () -> Unit) {
     val cat by ui.app.catalog.collectAsState()
+    // What cmus played takes the place of this queue as soon as the catalog and the player are there.
+    val handoff = ui.app.handoffs.offer
+    LaunchedEffect(handoff, cat, ui.controller) { handoff?.let(ui::takeOver) }
     val stack = ui.stack()
     val screen = stack.last()
     val saved = rememberSaveableStateHolder()
@@ -309,11 +312,10 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                         backgroundColor = UiColor.Black
                         tints = listOf(HazeTint(UiColor(0xC7080A09)))
                         fallbackTint = HazeTint(UiColor(0xF0080A09))
-                        // Fades in over the top padding only, so a taller panel (with the Resume banner) is solid under its content.
+                        // Fades in over the top padding only, so a taller panel is solid under its content.
                         mask = Brush.verticalGradient(listOf(UiColor.Transparent, UiColor.Black), endY = barFade)
                     }.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(top = 20.dp)
                 ) {
-                    ResumeBanner(ui, cat)
                     MiniPlayer(ui, cat)
                     Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
                         Tab.entries.forEach { t ->
