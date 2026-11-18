@@ -95,7 +95,7 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
                         colors = SliderDefaults.colors(activeTrackColor = white, inactiveTrackColor = white.copy(alpha = 0.22f)),
                     )
                     // How much is loaded, grey over the rest of the track.
-                    Box(Modifier.fillMaxWidth((buffered.toFloat() / dur).coerceIn(0f, 1f)).height(4.dp).clip(CircleShape).background(white.copy(alpha = 0.25f)))
+                    Box(Modifier.fillMaxWidth((buffered.toFloat() / dur).coerceIn(0f, 1f)).height(4.dp).clip(CircleShape).background(white.copy(alpha = 0.35f)))
                 }
             },
         )
