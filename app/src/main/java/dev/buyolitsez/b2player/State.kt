@@ -29,17 +29,22 @@ class Playlists(context: Context) {
     fun add(id: String, trackIds: List<String>) = update(id) { p -> p.copy(trackIds = p.trackIds + trackIds.filter { it !in p.trackIds }) }
 
     /**
-     * Same rule as likes: unsent local changes win, otherwise the bucket copy wins. The network
-     * part runs without the lock, so edits made meanwhile are kept and sent next time.
+     * Unsent local edits are merged with the bucket copy, against the copy of the last sync ("base"), so edits
+     * made in cmus meanwhile aren't lost; see [mergePlaylists]. Without local edits the bucket copy wins. The
+     * network part runs without the lock, so edits made meanwhile are kept and sent next time.
      */
     fun sync(b2: B2) {
         val (dirty, data) = synchronized(this) { prefs.getBoolean("dirty", false) to prefs.getString("data", null) }
+        val remote = b2.fetchOrNull(KEY)?.decodeToString()
         if (dirty) {
-            b2.upload(KEY, toJson(parse(data)).toString(1).toByteArray(), "application/json")
-            synchronized(this) { if (prefs.getString("data", null) == data) prefs.edit().putBoolean("dirty", false).apply() }
-        } else {
-            val bytes = b2.fetchOrNull(KEY) ?: return
-            synchronized(this) { if (!prefs.getBoolean("dirty", false)) prefs.edit().putString("data", bytes.decodeToString()).apply() }
+            val merged = toJson(remote?.let { mergePlaylists(parse(prefs.getString("base", null)), parse(data), parse(it)) } ?: parse(data)).toString(1)
+            b2.upload(KEY, merged.toByteArray(), "application/json")
+            // After a newer edit the local copy lacks the merged-in changes: the old base keeps them coming next time.
+            synchronized(this) {
+                if (prefs.getString("data", null) == data) prefs.edit().putString("data", merged).putString("base", merged).putBoolean("dirty", false).apply()
+            }
+        } else if (remote != null) {
+            synchronized(this) { if (!prefs.getBoolean("dirty", false)) prefs.edit().putString("data", remote).putString("base", remote).apply() }
         }
     }
 
