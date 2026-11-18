@@ -59,6 +59,7 @@
         </provider>
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <receiver android:name=".DismissReceiver" android:exported="false" />
+        <receiver android:name=".RetryReceiver" android:exported="false" />
         <!-- Downloads run as foreground workers. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

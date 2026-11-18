@@ -88,8 +88,8 @@ class Assistant(private val ui: Ui) {
         override val queueIds get() = ui.queueIds
         override val currentIndex get() = ui.currentIndex
         override fun play(tracks: List<Track>, shuffled: Boolean) { ui.play(tracks, shuffled = shuffled) }
-        override fun playNext(tracks: List<Track>) = ui.playNext(tracks)
-        override fun addToEnd(tracks: List<Track>) = ui.addToEnd(tracks)
+        override fun playNext(tracks: List<Track>) { ui.playNext(tracks) }
+        override fun addToEnd(tracks: List<Track>) { ui.addToEnd(tracks) }
         override fun restoreQueue() = ui.restoreReplaced()
         override fun isLiked(t: Track) = ui.library.isLiked(t)
         override fun setLiked(tracks: List<Track>, liked: Boolean) = ui.setLiked(tracks, liked)

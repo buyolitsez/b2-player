@@ -358,12 +358,15 @@ class PlaybackService : MediaSessionService() {
      * Lite streaming was turned on or off: the queue's tracks switch to the other files. The current
      * track is reloaded at the same place only if its file changes; the play order stays.
      */
-    private fun switchFiles(player: ExoPlayer) {
+    private fun switchFiles(player: ExoPlayer) = app.scope.launch(Dispatchers.Main) {
         val n = player.mediaItemCount
         val old = (0 until n).map { player.getMediaItemAt(it) }
-        val items = old.map { item -> track(item)?.let { app.library.mediaItem(it) } ?: item }
+        // A file check per track: for a queue of thousands of tracks that is seconds, too slow for the main thread.
+        val items = withContext(Dispatchers.IO) { old.map { item -> track(item)?.let { app.library.mediaItem(it) } ?: item } }
+        // The queue changed meanwhile: its new tracks already have the right files.
+        if (player.mediaItemCount != n || (0 until n).any { player.getMediaItemAt(it).mediaId != old[it].mediaId }) return@launch
         val changed = items.indices.filter { items[it].localConfiguration?.uri != old[it].localConfiguration?.uri }
-        if (changed.isEmpty()) return
+        if (changed.isEmpty()) return@launch
         val cur = player.currentMediaItemIndex
         val pos = player.currentPosition
         val order = playOrder(player)

@@ -171,12 +171,12 @@ fun SleepTimerDialog(ui: Ui, dismiss: () -> Unit) {
     // null: the main list; otherwise the "After N minutes" or "After N tracks" picker.
     var picker by remember { mutableStateOf<String?>(null) }
     var custom by remember(picker) { mutableStateOf("") }
-    fun set(toast: String, apply: () -> Unit) {
+    fun set(apply: () -> Unit) {
         app.sleepAt.value = null; app.sleepAfterAlbum.value = null; app.sleepAfterTracks.value = null; app.stopAfterId.value = null
-        apply(); ui.toast(toast); dismiss()
+        apply(); dismiss()
     }
-    fun minutes(m: Int) = set("Will pause in $m min") { app.sleepAt.value = System.currentTimeMillis() + m * 60_000L }
-    fun tracks(n: Int) = set(if (n == 0) "Will pause after this track" else "Will pause after ${moreTracks(n)}") { app.sleepAfterTracks.value = n }
+    fun minutes(m: Int) = set { app.sleepAt.value = System.currentTimeMillis() + m * 60_000L }
+    fun tracks(n: Int) = set { app.sleepAfterTracks.value = n }
     @Composable fun Option(text: String, onClick: () -> Unit) =
         Text(text, Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp))
     AlertDialog(
@@ -189,8 +189,8 @@ fun SleepTimerDialog(ui: Ui, dismiss: () -> Unit) {
                         Option("After N minutes…") { picker = "minutes" }
                         Option("After N tracks…") { picker = "tracks" }
                         if (t != null) {
-                            Option("End of this track") { set("Will pause after “${t.title}”") { app.stopAfterId.value = t.id } }
-                            Option("End of this album") { set("Will pause after “${t.album.title}”") { app.sleepAfterAlbum.value = t.album.id } }
+                            Option("End of this track") { set { app.stopAfterId.value = t.id } }
+                            Option("End of this album") { set { app.sleepAfterAlbum.value = t.album.id } }
                         }
                     }
                     "minutes" -> listOf(10, 15, 30, 45, 60, 90).forEach { m -> Option("$m minutes") { minutes(m) } }
@@ -213,7 +213,7 @@ fun SleepTimerDialog(ui: Ui, dismiss: () -> Unit) {
         },
         confirmButton = {
             if (picker == null && (app.sleepAt.value != null || app.sleepAfterAlbum.value != null || app.sleepAfterTracks.value != null || app.stopAfterId.value != null))
-                TextButton({ set("Sleep timer off") {} }) { Text("Turn off") }
+                TextButton({ set {} }) { Text("Turn off") }
         },
         dismissButton = { TextButton({ if (picker != null) picker = null else dismiss() }) { Text(if (picker != null) "Back" else "Close") } },
     )

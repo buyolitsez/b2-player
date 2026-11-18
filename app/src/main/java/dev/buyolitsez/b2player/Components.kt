@@ -405,7 +405,7 @@ fun AddToPlaylistDialog(ui: Ui) {
             }
         },
         confirmButton = {
-            TextButton({ ui.createPlaylist(name, tracks); ui.toast("Playlist created"); ui.addToPlaylist = null }, enabled = name.isNotBlank()) { Text("Create") }
+            TextButton({ ui.createPlaylist(name, tracks); ui.addToPlaylist = null }, enabled = name.isNotBlank()) { Text("Create") }
         },
         dismissButton = { TextButton({ ui.addToPlaylist = null }) { Text(if (single != null) "Done" else "Cancel") } },
     )
