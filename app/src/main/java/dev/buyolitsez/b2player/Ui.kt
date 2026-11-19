@@ -439,6 +439,34 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         restore(q, play = true)
     }
 
+    /**
+     * Takes over what the other device played, paused, so Play goes on from there: its queue with the tracks
+     * played before, the track and the position. A different queue here goes to the saved queues first,
+     * unless it came from the last take-over itself.
+     */
+    fun takeOver(h: Handoff) {
+        val c = controller ?: return
+        val byId = app.catalog.value?.byId ?: return
+        val t = byId[h.trackId] ?: return
+        if (playing) return
+        app.handoffs.taken(h)
+        val past = h.past.filter { it in byId }
+        val ids = past + h.queue.filter { it in byId }
+        val pos = h.positionNow((t.duration * 1000).toLong())
+        AppLog.d("ui", "Take over ${ids.size} tracks from ${h.device} at ${past.size}")
+        if (!c.shuffleModeEnabled && ids == queueIds) { c.seekTo(past.size, pos); return }
+        val taken = takenIds
+        takenIds = ids
+        if (queueIds != taken) snapshot()?.let { cur -> library.savedQueues = (listOf(cur.copy(name = "Previous queue")) + library.savedQueues).take(10); version++ }
+        filterJob?.cancel()
+        prefs.queueFilter.set(LikeFilter.All.name)
+        // The queue comes in the order it played there, so shuffle would only scramble it.
+        restore(SavedQueue("", ids, past.size, pos), play = false, shuffle = false)
+    }
+
+    /** The queue of the last take-over, so cmus moving through albums does not fill the saved queues. */
+    private var takenIds: List<String>? = null
+
     fun deleteSaved(i: Int) {
         library.savedQueues = library.savedQueues.toMutableList().apply { removeAt(i) }
         version++

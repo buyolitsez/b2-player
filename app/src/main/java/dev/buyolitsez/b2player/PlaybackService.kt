@@ -99,10 +99,10 @@ class PlaybackService : MediaSessionService() {
                 switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
-                if (player.playWhenReady && item != null) app.handoffs.write(app.b2, upcoming(player), 0, true)
+                if (player.playWhenReady && item != null) app.handoffs.write(app.b2, played(player), upcoming(player), 0, true)
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                if (player.currentMediaItem != null) app.handoffs.write(app.b2, upcoming(player), player.currentPosition, playWhenReady)
+                if (player.currentMediaItem != null) app.handoffs.write(app.b2, played(player), upcoming(player), player.currentPosition, playWhenReady)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying && listenedMs == 0L) { startedAt = System.currentTimeMillis(); sendNowPlaying(player.currentMediaItem) }
@@ -409,6 +409,18 @@ class PlaybackService : MediaSessionService() {
             i = tl.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
         }
         return ids
+    }
+
+    /** The tracks before the current one in play order, oldest first. */
+    private fun played(player: Player): List<String> {
+        val tl = player.currentTimeline
+        val ids = ArrayList<String>()
+        var i = if (tl.isEmpty) C.INDEX_UNSET else tl.getPreviousWindowIndex(player.currentMediaItemIndex, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        while (i != C.INDEX_UNSET && ids.size < Handoffs.PAST_MAX) {
+            ids.add(player.getMediaItemAt(i).mediaId)
+            i = tl.getPreviousWindowIndex(i, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        }
+        return ids.asReversed()
     }
 
     /** Downloads the next tracks of the queue into the cache, so a weak network does not stall playback. */
