@@ -220,16 +220,33 @@ class Covers(private val app: App) {
     /** Drops the decoded thumbnails, e.g. when the app goes to the background. */
     fun trim() = mem.evictAll()
     private val dir = File(app.cacheDir, "covers")
+    // Covers come over the network on their own few threads: on a bad network each request can hang for
+    // up to 45 s, and on the shared IO threads a screen of them held up building the queue for Play.
+    private val fetcher = Dispatchers.IO.limitedParallelism(4)
 
     private fun memKey(key: String, small: Boolean) = if (small) "small:$key" else key
 
     fun cached(key: String, small: Boolean = false): Bitmap? = mem.get(memKey(key, small))
 
-    suspend fun load(key: String, small: Boolean = false): Bitmap? = cached(key, small) ?: withContext(Dispatchers.IO) {
-        val f = File(dir, key.substringAfterLast('/'))
-        try {
-            if (!f.exists()) app.b2.download(key, f)
-            BitmapFactory.decodeFile(f.path, if (small) decodeSmall else decode)?.also { mem.put(memKey(key, small), it) }
-        } catch (e: Exception) { null }
+    suspend fun load(key: String, small: Boolean = false): Bitmap? = cached(key, small) ?: run {
+        val f = file(key)
+        if (!withContext(Dispatchers.IO) { f.exists() }) withContext(fetcher) { fetch(key, f) }
+        withContext(Dispatchers.IO) { BitmapFactory.decodeFile(f.path, if (small) decodeSmall else decode)?.also { mem.put(memKey(key, small), it) } }
     }
+
+    /**
+     * Fetches the covers of albums with liked tracks that aren't on disk yet, so the liked tracks show
+     * their covers without a network too. Stops at the first failure: then there is no network.
+     */
+    suspend fun fetchLiked(cat: Catalog) = withContext(fetcher) {
+        val keys = cat.albums.filter { a -> a.cover != null && a.tracks.any { app.library.isLiked(it) } }.map { it.cover!! }
+        val missing = keys.filter { !file(it).exists() }
+        if (missing.isEmpty()) return@withContext
+        val n = missing.indexOfFirst { !fetch(it, file(it)) }.let { if (it < 0) missing.size else it }
+        AppLog.i("covers", "Liked albums: fetched $n of ${missing.size} missing covers")
+    }
+
+    private fun file(key: String) = File(dir, key.substringAfterLast('/'))
+
+    private fun fetch(key: String, f: File): Boolean = f.exists() || runCatching { app.b2.download(key, f) }.isSuccess
 }

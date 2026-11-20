@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -118,6 +121,7 @@ class App : Application() {
     lateinit var audioFx: AudioFx
     lateinit var lyrics: LyricsRepo
     lateinit var updates: Updates
+    lateinit var covers: Covers
     lateinit var cache: SimpleCache
     lateinit var dataSourceFactory: DataSource.Factory
     /** Cache-backed b2:// source, also used to prefetch upcoming tracks. */
@@ -283,6 +287,7 @@ class App : Application() {
             StandaloneDatabaseProvider(this),
         )
         library = Library(this, cache, prefs)
+        covers = Covers(this)
         // b2://bucket/<key> -> authorized HTTPS request. The cache key is the b2:// URI, so it
         // stays stable although the auth token changes.
         val upstream = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setTransferListener(NetTimings)) { spec ->
@@ -297,6 +302,9 @@ class App : Application() {
         // Search keys (accent folding of 18k titles) are built here, not on the first keystroke.
         scope.launch(Dispatchers.Default) {
             catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey }; library.dropStaleCache(this) } }
+        }
+        scope.launch {
+            combine(catalog.filterNotNull(), likesChanged) { c, _ -> c }.collectLatest { covers.fetchLiked(it) }
         }
         scope.launch(Dispatchers.IO) {
             catalog.collect { c -> c?.let { runCatching { library.moveDownloads(it) }.onFailure { AppLog.w("download", "Moving downloads failed", it) } } }
