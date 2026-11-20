@@ -57,11 +57,26 @@ class LyricsRepo(private val app: App) {
     }.onFailure { AppLog.w("lyrics", "Saving found lyrics failed for ${t.id}", it) }
 
     private fun tagLyrics(t: Track): Lyrics? {
-        val f = File(app.cacheDir, "lyrics-${t.album.id}.json")
+        val f = tagFile(t.album)
         if (!f.exists()) app.b2.download("lyrics/${t.album.id}.json", f)
         val text = JSONObject(f.readText()).optString(t.path).takeIf { it.isNotBlank() } ?: return null
         val synced = parseLrc(text)
         return Lyrics(synced, if (synced == null) text else null, "file tags")
+    }
+
+    private fun tagFile(a: Album) = File(app.cacheDir, "lyrics-${a.id}.json")
+
+    /**
+     * Fetches the tag lyrics of albums with liked tracks that aren't on disk yet, so the liked tracks show their
+     * lyrics without a network too. Stops at the first failure: then there is no network. lrclib.net answers
+     * are kept only for tracks whose lyrics were opened.
+     */
+    fun fetchLiked(cat: Catalog) {
+        val missing = cat.albums.filter { a -> a.tracks.any { it.hasLyrics && app.library.isLiked(it) } && !tagFile(a).exists() }
+        if (missing.isEmpty()) return
+        val n = missing.indexOfFirst { a -> runCatching { app.b2.download("lyrics/${a.id}.json", tagFile(a)) }.isFailure }
+            .let { if (it < 0) missing.size else it }
+        AppLog.i("lyrics", "Liked albums: fetched $n of ${missing.size} missing lyrics")
     }
 
     /** Exact match by artist, title, album and duration first; then a search with a duration check. */

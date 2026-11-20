@@ -304,7 +304,10 @@ class App : Application() {
             catalog.collect { c -> c?.run { albums.forEach { it.searchKey }; tracks.forEach { it.searchKey }; library.dropStaleCache(this) } }
         }
         scope.launch {
-            combine(catalog.filterNotNull(), likesChanged) { c, _ -> c }.collectLatest { covers.fetchLiked(it) }
+            combine(catalog.filterNotNull(), likesChanged) { c, _ -> c }.collectLatest {
+                covers.fetchLiked(it)
+                withContext(Dispatchers.IO) { lyrics.fetchLiked(it) }
+            }
         }
         scope.launch(Dispatchers.IO) {
             catalog.collect { c -> c?.let { runCatching { library.moveDownloads(it) }.onFailure { AppLog.w("download", "Moving downloads failed", it) } } }
