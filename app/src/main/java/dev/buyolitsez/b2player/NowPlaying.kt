@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import sh.calvin.reorderable.rememberScroller
 
 /** Now playing, over the tabs. */
 @UnstableApi
@@ -258,7 +259,11 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     val keys = stableKeys(ids)
     val indexOf = remember(keys) { keys.withIndex().associate { (i, k) -> k to i } }
     val listState = rememberLazyListState()
-    val reorder = rememberReorderableLazyListState(listState) { from, to ->
+    // The library scrolls when the middle of the dragged row is within 48dp of an edge, so picking up the row at
+    // the edge scrolled the list at once and moved the row past its neighbour, and it scrolled up to a few screens
+    // a second. Here the list scrolls only once the row is pushed into the edge, at most about a dozen rows a second.
+    val reorder = rememberReorderableLazyListState(listState, scrollThreshold = 16.dp,
+        scroller = rememberScroller(listState, with(LocalDensity.current) { 150.dp.toPx() })) { from, to ->
         val a = indexOf[from.key] ?: return@rememberReorderableLazyListState
         val b = indexOf[to.key] ?: return@rememberReorderableLazyListState
         // A moved track plays after the track above it in the queue (see Ui.moveInQueue), so it goes
