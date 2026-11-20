@@ -210,6 +210,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
         ui.colors = (if (ui.prefs.coverTint.value) coverKey?.let { k -> ui.covers.load(k)?.let { withContext(Dispatchers.Default) { coverColors(it) } } } else null) ?: DefaultColors
     }
+    // The next track's cover is decoded ahead, so a skip shows it at once.
+    val nextCover = ui.nextId?.let { cat?.byId?.get(it) }?.album?.cover
+    LaunchedEffect(nextCover) { nextCover?.let { ui.covers.load(it); ui.covers.load(it, small = true) } }
     // The album and Liked screens get their color at the top, fading out under the list.
     val headerTint by produceState<UiColor?>(null, screen) {
         value = when (screen) {
