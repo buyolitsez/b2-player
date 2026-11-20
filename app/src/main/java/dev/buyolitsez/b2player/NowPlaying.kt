@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -274,11 +275,11 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     var menu by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val played = if (fq.isEmpty()) order.take(at) else emptyList()
-    val next = if (fq.isEmpty()) order.drop(at + 1) else order.filterBy(fq) { tracks.getOrNull(it)?.searchKey.orEmpty() }
-    val current = tracks.getOrNull(ui.currentIndex)
+    // One flat list in play order: rows of one height and nothing between them, so a dragged row moves evenly,
+    // the playing one too. Played rows are dimmed, the playing one is highlighted.
+    val rows = if (fq.isEmpty()) order else order.filterBy(fq) { tracks.getOrNull(it)?.searchKey.orEmpty() }
     // Start at the current track, with what already played above it.
-    LaunchedEffect(Unit) { if (played.isNotEmpty()) listState.scrollToItem(played.size + 1) }
+    LaunchedEffect(Unit) { if (at > 0) listState.scrollToItem(at) }
     // Saved queues are at the top of the list, above what played.
     LaunchedEffect(showSaved) { if (showSaved) listState.animateScrollToItem(0) }
     val drag = fq.isEmpty()
@@ -321,38 +322,17 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
                     }
                 }
                 if (ids.isEmpty()) item { Text("The queue is empty. Play an album or a track.", Modifier.padding(20.dp), color = Muted) }
-                val row: @Composable LazyItemScope.(Int) -> Unit = row@{ i ->
-                    val t = tracks[i] ?: return@row
+                items(rows, key = { keys[it] }) { i ->
+                    val t = tracks[i] ?: return@items
+                    val pos = order.indexOf(i)
                     ReorderableItem(reorder, key = keys[i], enabled = drag) {
-                        TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
-                            dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null,
-                            dragModifier = if (drag) longPressDrag() else Modifier)
-                    }
-                }
-                if (played.isNotEmpty()) item { SectionTitle("Played") }
-                items(played, key = { keys[it] }) { row(it) }
-                if (fq.isEmpty() && current != null) {
-                    item(key = "now") {
-                        Column {
-                            SectionTitle("Now playing")
-                            Row(
-                                Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(64.dp).clip(RoundedCornerShape(10.dp))
-                                    .background(Color.White.copy(alpha = 0.08f)).padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Cover(ui, current.album.cover, 46.dp)
-                                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                    Text(current.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(current.artist, style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                Icon(Icons.Default.GraphicEq, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text(formatTime(current.duration), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
-                            }
+                        Box(Modifier.background(if (pos == at) Color.White.copy(alpha = 0.08f) else Color.Transparent).alpha(if (pos < at) 0.5f else 1f)) {
+                            TrackRow(ui, t, showCover = true, onClick = { ui.controller?.run { seekTo(i, 0); resume() } }, queueIndex = i,
+                                dragHandle = if (drag) ({ DragHandle(Modifier.draggableHandle()) }) else null,
+                                dragModifier = if (drag) longPressDrag() else Modifier)
                         }
                     }
                 }
-                if (next.isNotEmpty()) item { SectionTitle(if (fq.isEmpty()) "Next up" else "Found") }
-                items(next, key = { keys[it] }) { row(it) }
             }
             Row(Modifier.padding(20.dp, 8.dp, 20.dp, 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 @Composable fun button(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean = false, onClick: () -> Unit) = Row(
