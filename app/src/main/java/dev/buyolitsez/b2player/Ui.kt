@@ -60,7 +60,7 @@ sealed interface Screen {
 /** All UI state and actions, shared by the composables. */
 @UnstableApi
 class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
-    val covers = Covers(app)
+    val covers get() = app.covers
     val assistant = Assistant(this)
     val soulseek = Soulseek(this)
     val snackbar = SnackbarHostState()
@@ -268,7 +268,10 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         AppLog.d("ui", "Queue items in ${SystemClock.elapsedRealtime() - t0} ms")
         if (controller !== c) return@launch
         library.queueSource = tracks.map { it.id }
-        c.setMediaItems(items, if (shuffled) tracks.indices.random() else start, if (shuffled) 0 else positionMs)
+        // Shuffle starts on a downloaded track when there is one: it sounds at once, also on a bad network.
+        val first = if (!shuffled) start
+            else items.indices.filter { items[it].localConfiguration?.uri?.scheme == "file" }.randomOrNull() ?: tracks.indices.random()
+        c.setMediaItems(items, first, if (shuffled) 0 else positionMs)
         c.prepare(); c.play()
         if (before != null && before.ids != tracks.map { it.id }) {
             replaced = before to wasShuffled
