@@ -96,7 +96,8 @@ class PlaybackService : MediaSessionService() {
                 AppLog.d("player", "Now ${item?.mediaId} (reason $reason)")
                 lastId = item?.mediaId
                 updateButtons()
-                switchedAt = if (player.isPlaying) 0 else System.currentTimeMillis()
+                // A new queue counts too: the player stops playing until its first track is ready.
+                switchedAt = if (player.isPlaying && reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) 0 else System.currentTimeMillis()
                 listenedMs = 0; counted = false; startedAt = System.currentTimeMillis()
                 if (player.isPlaying) { sendNowPlaying(item); prefetch(player) }
                 if (player.playWhenReady && item != null) app.handoffs.write(app.b2, played(player), upcoming(player), 0, true)

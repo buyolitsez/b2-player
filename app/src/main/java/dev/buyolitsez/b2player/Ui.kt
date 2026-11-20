@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.compose.material3.SnackbarDuration
@@ -261,8 +262,10 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         // "Shuffle" turns shuffle on, a plain play turns it off: an album started with Play plays in order.
         c.shuffleModeEnabled = shuffled
         AppLog.d("ui", "Play ${tracks.size} tracks from ${tracks.first().album.dir}, start $start, shuffle $shuffled")
+        val t0 = SystemClock.elapsedRealtime()
         // A file check per track: for a 2600-track list that is too slow for the main thread.
         val items = withContext(Dispatchers.IO) { tracks.map { library.mediaItem(it) } }
+        AppLog.d("ui", "Queue items in ${SystemClock.elapsedRealtime() - t0} ms")
         if (controller !== c) return@launch
         library.queueSource = tracks.map { it.id }
         c.setMediaItems(items, if (shuffled) tracks.indices.random() else start, if (shuffled) 0 else positionMs)
