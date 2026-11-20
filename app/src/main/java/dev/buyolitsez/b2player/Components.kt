@@ -60,9 +60,10 @@ fun listPadding(top: Dp = 0.dp) = PaddingValues(top = top, bottom = LocalListBot
 @UnstableApi
 @Composable
 fun Cover(ui: Ui, key: String?, size: Dp?, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(if (size != null && size <= 64.dp) 4.dp else 6.dp)) {
-    // produceState keeps the old value when the key changes, so always reset it to the new cover.
     val small = size != null && size <= 64.dp
-    val bmp by produceState(key?.let { ui.covers.cached(it, small) }, key) { value = key?.let { ui.covers.load(it, small) } }
+    val loaded by produceState(key?.let { ui.covers.cached(it, small) }, key) { value = key?.let { ui.covers.load(it, small) } }
+    // A new cover in memory shows in the same frame; one from disk replaces the old cover once decoded.
+    val bmp = key?.let { ui.covers.cached(it, small) } ?: loaded
     val m = (if (size != null) modifier.size(size) else modifier.aspectRatio(1f)).clip(shape).background(Gray2)
     Box(m, Alignment.Center) {
         val b = bmp

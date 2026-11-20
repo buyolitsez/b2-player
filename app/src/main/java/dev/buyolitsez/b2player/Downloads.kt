@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.LruCache
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -247,6 +248,9 @@ class Covers(private val app: App) {
     }
 
     private fun file(key: String) = File(dir, key.substringAfterLast('/'))
+
+    /** The cover on disk for a b2:// artwork URI, so the notification doesn't fetch it again. */
+    fun localUri(artwork: Uri): Uri? = artwork.takeIf { it.scheme == "b2" }?.path?.let { file(it) }?.takeIf { it.exists() }?.let { Uri.fromFile(it) }
 
     private fun fetch(key: String, f: File): Boolean = f.exists() || runCatching { app.b2.download(key, f) }.isSuccess
 }

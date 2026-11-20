@@ -2,6 +2,7 @@ package dev.buyolitsez.b2player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +12,7 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.PlatformQueue
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DataSpec
@@ -185,7 +187,7 @@ class PlaybackService : MediaSessionService() {
         }
         session = MediaSession.Builder(this, sessionPlayer)
             .setSessionActivity(open)
-            .setBitmapLoader(CacheBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(app.dataSourceFactory).build()))
+            .setBitmapLoader(CacheBitmapLoader(coverLoader()))
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(s: MediaSession, c: MediaSession.ControllerInfo) =
                     MediaSession.ConnectionResult.AcceptedResultBuilder(s)
@@ -266,6 +268,16 @@ class PlaybackService : MediaSessionService() {
                 2 -> player.seekToNextMediaItem()
                 else -> player.seekToPrevious()
             }
+        }
+    }
+
+    /** Notification art: covers already on disk load from there instead of the bucket. */
+    private fun coverLoader(): BitmapLoader {
+        val net = DataSourceBitmapLoader.Builder(this).setDataSourceFactory(app.dataSourceFactory).build()
+        return object : BitmapLoader {
+            override fun supportsMimeType(mimeType: String) = net.supportsMimeType(mimeType)
+            override fun decodeBitmap(data: ByteArray) = net.decodeBitmap(data)
+            override fun loadBitmap(uri: Uri) = net.loadBitmap(app.covers.localUri(uri) ?: uri)
         }
     }
 
