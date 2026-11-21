@@ -20,6 +20,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -122,6 +123,9 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         currentIndex = p.currentMediaItemIndex
         queueIds = (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId }
         playing = p.isPlaying || (p.playWhenReady && p.playbackState == Player.STATE_BUFFERING)
+        // Played here some other way than [resume] (the notification, say), or moved off the other device's track.
+        if (playing && queueIds == takenIds) remoteAt()?.let { (i, pos) -> p.seekTo(i, pos) }
+        if (playing || queueIds == takenIds && currentIndex != remoteIndex) remote = null
         shuffle = p.shuffleModeEnabled
         repeat = p.repeatMode
         nextId = p.nextMediaItemIndex.takeIf { it >= 0 }?.let { p.getMediaItemAt(it).mediaId }
@@ -458,16 +462,87 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         app.handoffs.taken(h)
         val past = h.past.filter { it in byId }
         val ids = past + h.queue.filter { it in byId }
-        val pos = h.positionNow((t.duration * 1000).toLong())
-        AppLog.d("ui", "Take over ${ids.size} tracks from ${h.device} at ${past.size}")
-        if (!c.shuffleModeEnabled && ids == queueIds) { c.seekTo(past.size, pos); return }
+        val live = remoteAt(h)
+        val (index, pos) = live ?: (past.size to h.positionNow((t.duration * 1000).toLong()))
+        remote = h.takeIf { live != null }
+        remoteIndex = index
+        AppLog.d("ui", "Take over ${ids.size} tracks from ${h.device} at $index${if (live != null) ", playing" else ""}")
+        if (!c.shuffleModeEnabled && ids == queueIds) {
+            takenIds = ids
+            // While it plays the position moves on by itself here, so only a new track needs a seek.
+            if (c.currentMediaItemIndex != index || live == null && abs(c.currentPosition - pos) > 1000) c.seekTo(index, pos)
+            return
+        }
         val taken = takenIds
         takenIds = ids
         if (queueIds != taken) snapshot()?.let { cur -> library.savedQueues = (listOf(cur.copy(name = "Previous queue")) + library.savedQueues).take(10); version++ }
         filterJob?.cancel()
         prefs.queueFilter.set(LikeFilter.All.name)
         // The queue comes in the order it played there, so shuffle would only scramble it.
-        restore(SavedQueue("", ids, past.size, pos), play = false, shuffle = false)
+        restore(SavedQueue("", ids, index, pos), play = false, shuffle = false)
+    }
+
+    /**
+     * What the other device plays while this phone does not. The paused queue here shows its track, and the
+     * position moves on from what it wrote, into the next tracks too, so nothing waits for its next write.
+     */
+    var remote by mutableStateOf<Handoff?>(null)
+    /** The queue index [remote] was last shown at, to tell a skip here from its own moving on. */
+    private var remoteIndex = -1
+
+    /**
+     * Where the other device is now in the taken-over queue: the index and position. Null well past the end
+     * of the written track with nothing written since: it stopped without saying so (cmus quit while playing).
+     */
+    fun remoteAt(h: Handoff? = remote): Pair<Int, Long>? {
+        if (h == null || !h.playing) return null
+        val byId = app.catalog.value?.byId ?: return null
+        val queue = h.queue.mapNotNull { byId[it] }
+        if (queue.firstOrNull()?.id != h.trackId) return null
+        var pos = h.positionMs + (System.currentTimeMillis() - h.time).coerceAtLeast(0)
+        if (pos > queue[0].duration * 1000 + 30_000) return null
+        var i = h.past.count { it in byId }
+        for (t in queue) {
+            val d = (t.duration * 1000).toLong()
+            if (pos < d) return i to pos
+            pos -= d
+            i++
+        }
+        return null
+    }
+
+    /** The position to show: the other device's while it plays, else this player's. */
+    fun position(c: Player): Long = remoteAt()?.second ?: c.currentPosition
+
+    /** Keeps the paused queue on the other device's track while it plays; lets go when it stops. */
+    suspend fun followRemote() {
+        while (remote != null) {
+            val c = controller ?: return
+            val at = remoteAt()
+            if (at == null) { remote = null; return }
+            if (queueIds == takenIds && at.first != remoteIndex) { remoteIndex = at.first; c.seekTo(at.first, at.second) }
+            delay(250)
+        }
+    }
+
+    /** Play here, from where the other device has got to. */
+    fun resume(c: Player) {
+        if (queueIds == takenIds) remoteAt()?.let { (i, pos) -> c.seekTo(i, pos) }
+        remote = null
+        c.resume()
+    }
+
+    /**
+     * When to look at what the other device plays next: a moment after its track ends while it plays, so the
+     * next one shows at once, and at least every 10 s for a pause or a skip there; every 15 s while nothing plays,
+     * and once a minute while this phone plays.
+     */
+    fun nextHandoffCheck(last: Long): Long {
+        if (playing) return last + 60_000
+        val (i, pos) = remoteAt() ?: return last + 15_000
+        val t = queueIds.getOrNull(i)?.let { app.catalog.value?.byId?.get(it) } ?: return last + 10_000
+        val end = System.currentTimeMillis() + (t.duration * 1000).toLong() - pos + 2500
+        return if (end > last) minOf(end, last + 10_000) else last + 10_000
     }
 
     /** The queue of the last take-over, so cmus moving through albums does not fill the saved queues. */

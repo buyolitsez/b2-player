@@ -58,7 +58,7 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     // A download or a track cached whole is loaded to the end; the player only buffers some way ahead of it.
     val whole = remember(t.id, ui.version) { ui.library.isDownloaded(t) || ui.library.isCached(t) }
-    LaunchedEffect(c, whole) { while (true) { pos = c.currentPosition; buffered = if (whole) dur else c.bufferedPosition; delay(500) } }
+    LaunchedEffect(c, whole) { while (true) { pos = ui.position(c); buffered = if (whole) dur else c.bufferedPosition; delay(500) } }
     val accent = MaterialTheme.colorScheme.primary
     val white = Color.White
     val openMenu = {
@@ -80,14 +80,14 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
             SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, white, 24.dp, Modifier.offset(x = 10.dp)) { ui.toggleLike(t) }
         }
         // The line is always there, so the controls don't jump when a timer is set.
-        val label = sleepLabel(ui)
-        Text(label ?: "", Modifier.padding(top = 2.dp).then(if (label != null) Modifier.clickable { sleep = true } else Modifier),
+        val label = ui.remote?.let { "Playing on ${it.device.replaceFirstChar(Char::uppercase)}" } ?: sleepLabel(ui)
+        Text(label ?: "", Modifier.padding(top = 2.dp).then(if (label != null && ui.remote == null) Modifier.clickable { sleep = true } else Modifier),
             style = MaterialTheme.typography.bodySmall, color = accent)
         Spacer(Modifier.height(8.dp))
         Slider(
             value = dragging ?: (pos.toFloat() / dur).coerceIn(0f, 1f),
             onValueChange = { dragging = it },
-            onValueChangeFinished = { dragging?.let { c.seekTo((it * dur).toLong()) }; dragging = null },
+            onValueChangeFinished = { dragging?.let { ui.remote = null; c.seekTo((it * dur).toLong()) }; dragging = null },
             modifier = Modifier.height(20.dp),
             thumb = { Box(Modifier.size(12.dp).background(white, CircleShape)) },
             track = { st ->
@@ -106,20 +106,20 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
             Text(formatTime(at), style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Small steps for long tracks and concerts.
-                SmallIcon(Icons.Default.Replay10, Color(0xFFC9C9C9), 22.dp, Modifier.size(36.dp)) { pos = (c.currentPosition - 10_000).coerceAtLeast(0); c.seekTo(pos) }
+                SmallIcon(Icons.Default.Replay10, Color(0xFFC9C9C9), 22.dp, Modifier.size(36.dp)) { pos = (ui.position(c) - 10_000).coerceAtLeast(0); ui.remote = null; c.seekTo(pos) }
                 // Lite streaming for a slow network; lit when on.
                 val lite = ui.prefs.liteStreaming.value
                 Text("LITE", Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(10.dp)).background(if (lite) accent.copy(alpha = 0.22f) else white.copy(alpha = 0.08f))
                     .clickable { ui.toggleLite() }.padding(horizontal = 10.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall, color = if (lite) accent else Color(0xFF9A9A9A))
-                SmallIcon(Icons.Default.Forward30, Color(0xFFC9C9C9), 22.dp, Modifier.size(36.dp)) { pos = (c.currentPosition + 30_000).coerceAtMost(dur); c.seekTo(pos) }
+                SmallIcon(Icons.Default.Forward30, Color(0xFFC9C9C9), 22.dp, Modifier.size(36.dp)) { pos = (ui.position(c) + 30_000).coerceAtMost(dur); ui.remote = null; c.seekTo(pos) }
             }
             Text("-" + formatTime((t.duration - at).coerceAtLeast(0.0)), style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             SmallIcon(Icons.Default.Shuffle, if (ui.shuffle) accent else Color(0xFFC9C9C9), 24.dp) { c.shuffleModeEnabled = !ui.shuffle }
             SmallIcon(Icons.Default.SkipPrevious, white, 40.dp) { c.seekToPrevious() }
-            Box(Modifier.size(76.dp).clip(CircleShape).background(white).clickable { if (ui.playing) c.pause() else c.resume() }, Alignment.Center) {
+            Box(Modifier.size(76.dp).clip(CircleShape).background(white).clickable { if (ui.playing) c.pause() else ui.resume(c) }, Alignment.Center) {
                 Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(38.dp), tint = Color.Black)
             }
             SmallIcon(Icons.Default.SkipNext, white, 40.dp) { c.seekToNextMediaItem() }
@@ -223,12 +223,15 @@ fun MiniPlayer(ui: Ui, cat: Catalog?) {
         Cover(ui, t.album.cover, 40.dp, shape = CircleShape)
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-            Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
+            val remote = ui.remote
+            if (remote != null) Text("Playing on ${remote.device.replaceFirstChar(Char::uppercase)}", maxLines = 1,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            else Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
         }
         SmallIcon(if (ui.liked(t)) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
             if (ui.liked(t)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, 22.dp) { ui.toggleLike(t) }
-        Box(Modifier.size(44.dp).clip(CircleShape).clickable { c?.run { if (ui.playing) pause() else resume() } }, Alignment.Center) {
-            if (c != null) MiniProgress(c, t)
+        Box(Modifier.size(44.dp).clip(CircleShape).clickable { c?.let { if (ui.playing) it.pause() else ui.resume(it) } }, Alignment.Center) {
+            if (c != null) MiniProgress(ui, c, t)
             Icon(if (ui.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(20.dp))
         }
     }
@@ -236,9 +239,9 @@ fun MiniPlayer(ui: Ui, cat: Catalog?) {
 
 // Ring around the play button; polls on its own so the rest doesn't recompose.
 @Composable
-private fun MiniProgress(c: Player, t: Track) {
+private fun MiniProgress(ui: Ui, c: Player, t: Track) {
     var pos by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(c) { while (true) { pos = c.currentPosition; delay(250) } }
+    LaunchedEffect(c) { while (true) { pos = ui.position(c); delay(250) } }
     val dur = (t.duration * 1000).toLong().coerceAtLeast(1)
     CircularProgressIndicator(
         { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.size(38.dp), color = Color.White, strokeWidth = 2.5.dp,
