@@ -396,15 +396,19 @@ class Library(private val context: Context, private val cache: Cache, private va
     }
 
     /**
-     * [isDownloaded] for many tracks: one listing per album folder instead of a check per file, which on
-     * shared storage costs ≈0.25 ms, seconds for the whole library. The listings are not updated afterwards.
+     * [isDownloaded] for many tracks: one listing per existing folder on the way instead of a check per file,
+     * which on shared storage costs ≈0.25 ms, seconds for the whole library. Folders with nothing downloaded
+     * are not looked at. The listings are not updated afterwards.
      */
     fun downloadedCheck(): (Track) -> Boolean {
-        val dirs = HashMap<String, Set<String>>()
-        return { t ->
-            val f = offlineFile(t.path)
-            f.name in dirs.getOrPut(f.parent.orEmpty()) { f.parentFile?.list()?.toHashSet().orEmpty() }
+        val listings = HashMap<String, Set<String>>()
+        fun has(path: String): Boolean {
+            val slash = path.lastIndexOf('/')
+            val dir = if (slash < 0) "" else path.substring(0, slash)
+            if (slash >= 0 && !has(dir)) return false
+            return path.substring(slash + 1) in listings.getOrPut(dir) { File(offlineDir, dir).list()?.toHashSet().orEmpty() }
         }
+        return { t -> has(t.path) }
     }
 
     companion object {

@@ -362,7 +362,7 @@ class PlaybackService : MediaSessionService() {
         if (!player.shuffleModeEnabled || count == 0) return
         val order = playOrder(player)
         if (order.size != player.mediaItemCount) return
-        val added = (from until from + count).toList()
+        val added = from until from + count
         val rest = order.filter { it !in added }
         val at = if (next) rest.indexOf(player.currentMediaItemIndex) + 1 else rest.size
         val newOrder = rest.take(at) + added + rest.drop(at)

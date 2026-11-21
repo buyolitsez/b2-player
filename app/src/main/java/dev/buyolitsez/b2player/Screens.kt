@@ -49,6 +49,16 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 // ---------------- library tabs ----------------
 
+/**
+ * [compute] again off the main thread when [keys] change: filtering and sorting 18k tracks takes up to ≈0.15 s.
+ * The first result is worked out at once, so a tab does not open empty; later the old one stays until the new is ready.
+ */
+@Composable
+fun <T> rememberInBackground(vararg keys: Any?, compute: () -> T): T {
+    val first = remember { compute() }
+    return produceState(first, *keys) { value = withContext(Dispatchers.Default) { compute() } }.value
+}
+
 @UnstableApi
 @Composable
 fun AlbumsTab(ui: Ui, cat: Catalog) {
@@ -58,7 +68,7 @@ fun AlbumsTab(ui: Ui, cat: Catalog) {
     var ratingMenu by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val albums = remember(cat, sort, days.value, minRating.value, fq, ui.version) { sortAlbums(ui, cat.albums.filterBy(fq) { it.searchKey }) }
+    val albums = rememberInBackground(cat, sort, days.value, minRating.value, fq, ui.version) { sortAlbums(ui, cat.albums.filterBy(fq) { it.searchKey }) }
     fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
     Column {
         FilterField(ui, q) { q = it }
@@ -172,7 +182,7 @@ fun TracksTab(ui: Ui, cat: Catalog) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
     val days = ui.prefs.recentDays.value
-    val tracks = remember(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
+    val tracks = rememberInBackground(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
     val state = rememberLazyListState()
     Column {
         FilterField(ui, q) { q = it }

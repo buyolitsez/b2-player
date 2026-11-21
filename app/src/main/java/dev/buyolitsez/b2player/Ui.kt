@@ -118,10 +118,16 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** The queue and play order [moveInQueue] expects, see [sync]. */
     private var movedOrder: Pair<List<String>, List<Int>>? = null
 
-    fun sync(p: Player) {
+    /**
+     * [events] null reads everything. The queue and its play order are read again only when they change:
+     * with the whole library queued that takes tens of ms, and a track change brings several events.
+     */
+    fun sync(p: Player, events: Player.Events? = null) {
         currentId = p.currentMediaItem?.mediaId
         currentIndex = p.currentMediaItemIndex
-        queueIds = (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId }
+        val queueChanged = events == null ||
+            events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)
+        if (queueChanged) queueIds = (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId }
         playing = p.isPlaying || (p.playWhenReady && p.playbackState == Player.STATE_BUFFERING)
         // Played here some other way than [resume] (the notification, say), or moved off the other device's track.
         if (playing && queueIds == takenIds) remoteAt()?.let { (i, pos) -> p.seekTo(i, pos) }
@@ -129,6 +135,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         shuffle = p.shuffleModeEnabled
         repeat = p.repeatMode
         nextId = p.nextMediaItemIndex.takeIf { it >= 0 }?.let { p.getMediaItemAt(it).mediaId }
+        if (!queueChanged) return
         val tl = p.currentTimeline
         val order = if (!p.shuffleModeEnabled || tl.isEmpty) queueIds.indices.toList()
         else generateSequence(tl.getFirstWindowIndex(true).takeIf { it != C.INDEX_UNSET }) {

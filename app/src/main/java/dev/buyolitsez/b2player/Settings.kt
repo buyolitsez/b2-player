@@ -48,7 +48,7 @@ fun SettingsScreen(ui: Ui, cat: Catalog?) {
     val sizes by produceState<SettingsSizes?>(null, cat, ui.version) {
         value = withContext(Dispatchers.IO) {
             SettingsSizes(
-                cat?.tracks?.filter { ui.library.isLiked(it) && !ui.library.isDownloaded(it) }.orEmpty(),
+                ui.library.downloadedCheck().let { d -> cat?.tracks?.filter { ui.library.isLiked(it) && !d(it) }.orEmpty() },
                 app.history.all().size, ui.library.cacheBytes(), AppLog.sizeBytes(),
             )
         }
@@ -340,9 +340,12 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
     val active = works.filter { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
     val downloaded by produceState<List<Pair<Album, List<Track>>>?>(null, cat, ui.version, active.size) {
         value = withContext(Dispatchers.IO) {
-            cat.albums.mapNotNull { a -> a.tracks.filter { ui.library.isDownloaded(it) }.takeIf { it.isNotEmpty() }?.let { a to it } }
+            val d = ui.library.downloadedCheck()
+            cat.albums.mapNotNull { a -> a.tracks.filter(d).takeIf { it.isNotEmpty() }?.let { a to it } }
         }
     }
+    // Waits for the cache's lock while the player writes to it.
+    val cacheBytes by produceState<Long?>(null, active.size) { value = withContext(Dispatchers.IO) { ui.library.cacheBytes() } }
     val total = downloaded?.sumOf { (_, t) -> t.distinctBy { it.path }.sumOf { it.size } } ?: 0
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
@@ -351,7 +354,7 @@ fun DownloadsScreen(ui: Ui, cat: Catalog) {
         LazyColumn(contentPadding = listPadding()) {
             item {
                 Text(
-                    "Downloaded: ${if (downloaded == null) "…" else formatSize(total)} · stream cache: ${formatSize(ui.library.cacheBytes())} of ${ui.prefs.cacheGb.value} GB",
+                    "Downloaded: ${if (downloaded == null) "…" else formatSize(total)} · stream cache: ${cacheBytes?.let(::formatSize) ?: "…"} of ${ui.prefs.cacheGb.value} GB",
                     Modifier.padding(20.dp, 8.dp), style = MaterialTheme.typography.bodyMedium,
                 )
                 if (active.isNotEmpty()) Row(Modifier.padding(horizontal = 20.dp)) {
