@@ -9,7 +9,9 @@ import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.session.PlatformQueue
 import androidx.media3.common.util.BitmapLoader
@@ -17,9 +19,15 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.exoplayer.DecoderCounters
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsCollector
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.CommandButton
@@ -76,6 +84,7 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAnalyticsCollector(NoAnalytics)
             .build()
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { app.audioFx.attach(audioSessionId) }
@@ -213,11 +222,11 @@ class PlaybackService : MediaSessionService() {
                     if (ev.action == android.view.KeyEvent.ACTION_DOWN && ev.repeatCount == 0) headsetPress(player)
                     return true
                 }
-                // Items from the controller arrive without their URI; restore it from request metadata.
+                // Items from the controller arrive without their URI and MIME type (see Library.mediaItem); restore them.
                 override fun onAddMediaItems(
                     s: MediaSession, c: MediaSession.ControllerInfo, items: MutableList<MediaItem>,
                 ): ListenableFuture<MutableList<MediaItem>> = Futures.immediateFuture(
-                    items.map { it.buildUpon().setUri(it.requestMetadata.mediaUri).build() }.toMutableList()
+                    items.map { it.buildUpon().setUri(it.requestMetadata.mediaUri).setMimeType(MimeTypes.AUDIO_UNKNOWN).build() }.toMutableList()
                 )
             })
             .build()
@@ -327,7 +336,7 @@ class PlaybackService : MediaSessionService() {
         val catalog = app.catalog.filterNotNull().first()
         val tracks = q.ids.mapNotNull { catalog.byId[it] }
         if (tracks.isEmpty()) return@launch
-        val items = tracks.map { app.library.mediaItem(it) }
+        val items = app.library.mediaItems(tracks)
         // tracks deleted since are dropped, so the saved index may point elsewhere: find the current one by id
         val current = tracks.indexOfFirst { it.id == q.ids.getOrNull(q.index) }
         withContext(Dispatchers.Main) {
@@ -374,8 +383,11 @@ class PlaybackService : MediaSessionService() {
     private fun switchFiles(player: ExoPlayer) = app.scope.launch(Dispatchers.Main) {
         val n = player.mediaItemCount
         val old = (0 until n).map { player.getMediaItemAt(it) }
-        // A file check per track: for a queue of thousands of tracks that is seconds, too slow for the main thread.
-        val items = withContext(Dispatchers.IO) { old.map { item -> track(item)?.let { app.library.mediaItem(it) } ?: item } }
+        // Downloaded files are looked up for each track: too slow for the main thread with thousands of tracks.
+        val items = withContext(Dispatchers.IO) {
+            val downloaded = app.library.downloadedCheck()
+            old.map { item -> track(item)?.let { app.library.mediaItem(it, downloaded = downloaded(it)) } ?: item }
+        }
         // The queue changed meanwhile: its new tracks already have the right files.
         if (player.mediaItemCount != n || (0 until n).any { player.getMediaItemAt(it).mediaId != old[it].mediaId }) return@launch
         val changed = items.indices.filter { items[it].localConfiguration?.uri != old[it].localConfiguration?.uri }
@@ -545,4 +557,42 @@ fun moveInOrder(order: List<Int>, from: Int, to: Int): List<Int> {
     }.filter { it != to }
     val at = if (to == 0) 0 else rest.indexOf(to - 1) + 1
     return rest.take(at) + to + rest.drop(at)
+}
+
+/**
+ * Replaces ExoPlayer's analytics, which nothing here listens to. It keeps the last event of each kind with the
+ * timeline of that moment, so an event that doesn't come again (shuffle turned on) keeps an old queue in memory:
+ * ≈40 MB for the whole library, and the third shuffle of it in a row ran out of memory.
+ */
+@UnstableApi
+private object NoAnalytics : AnalyticsCollector {
+    override fun addListener(listener: AnalyticsListener) {}
+    override fun removeListener(listener: AnalyticsListener) {}
+    override fun setPlayer(player: Player, looper: Looper) {}
+    override fun release() {}
+    override fun updateMediaPeriodQueueInfo(queue: List<MediaSource.MediaPeriodId>, readingPeriod: MediaSource.MediaPeriodId?) {}
+    override fun notifySeekStarted() {}
+    override fun onRendererReadyChanged(rendererIndex: Int, rendererTrackType: Int, isRendererReady: Boolean) {}
+    override fun onAudioEnabled(counters: DecoderCounters) {}
+    override fun onAudioDecoderInitialized(decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {}
+    override fun onAudioInputFormatChanged(format: Format, decoderReuseEvaluation: DecoderReuseEvaluation?) {}
+    override fun onAudioPositionAdvancing(playoutStartSystemTimeMs: Long) {}
+    override fun onAudioUnderrun(bufferSize: Int, bufferSizeMs: Long, elapsedSinceLastFeedMs: Long) {}
+    override fun onAudioDecoderReleased(decoderName: String) {}
+    override fun onAudioDisabled(counters: DecoderCounters) {}
+    override fun onAudioSinkError(audioSinkError: Exception) {}
+    override fun onAudioCodecError(audioCodecError: Exception) {}
+    override fun onAudioTrackInitialized(audioTrackConfig: AudioSink.AudioTrackConfig) {}
+    override fun onAudioTrackReleased(audioTrackConfig: AudioSink.AudioTrackConfig) {}
+    override fun onVideoEnabled(counters: DecoderCounters) {}
+    override fun onVideoDecoderInitialized(decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {}
+    override fun onVideoInputFormatChanged(format: Format, decoderReuseEvaluation: DecoderReuseEvaluation?) {}
+    override fun onDroppedFrames(count: Int, elapsedMs: Long) {}
+    override fun onVideoDecoderReleased(decoderName: String) {}
+    override fun onVideoDisabled(counters: DecoderCounters) {}
+    override fun onRenderedFirstFrame(output: Any, renderTimeMs: Long) {}
+    override fun onVideoFrameProcessingOffset(totalProcessingOffsetUs: Long, frameCount: Int) {}
+    override fun onVideoCodecError(videoCodecError: Exception) {}
+    override fun onDroppedSeeksWhileScrubbing(droppedSeeks: Int) {}
+    override fun onBandwidthSample(elapsedMs: Int, bytesTransferred: Long, bitrateEstimate: Long) {}
 }

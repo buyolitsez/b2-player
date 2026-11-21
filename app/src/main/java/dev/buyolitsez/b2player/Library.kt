@@ -7,12 +7,12 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceInputStream
 import androidx.media3.datasource.DataSpec
@@ -334,20 +334,19 @@ class Library(private val context: Context, private val cache: Cache, private va
      * Plays the download if there is one; with Lite streaming on, the light copy, unless the
      * original is cached whole; otherwise the original.
      */
-    fun mediaItem(t: Track, lite: Boolean = settings.liteStreaming.value): MediaItem {
-        val local = offlineFile(t.path)
+    fun mediaItem(t: Track, lite: Boolean = settings.liteStreaming.value, downloaded: Boolean = isDownloaded(t)): MediaItem {
         val uri = when {
-            local.exists() -> Uri.fromFile(local)
+            downloaded -> Uri.fromFile(offlineFile(t.path))
             lite && t.liteSize > 0 && !isCached(t) -> liteUriFor(t.path)
             else -> uriFor(t.path)
         }
-        val b = MediaItem.Builder().setMediaId(t.id).setUri(uri)
+        // A MIME type spares the player guessing the type from the decoded path of each item, on the main thread.
+        val b = MediaItem.Builder().setMediaId(t.id).setUri(uri).setMimeType(MimeTypes.AUDIO_UNKNOWN)
             .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
             .setMediaMetadata(
                 MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).setAlbumTitle(t.album.title)
                     .setTrackNumber(t.number).setIsPlayable(true).setIsBrowsable(false)
                     .setArtworkUri(t.album.cover?.let { Uri.parse("b2://bucket/" + Uri.encode(it, "/")) })
-                    .setExtras(Bundle().apply { putString("path", t.path) })
                     .build()
             )
         t.start?.let { start ->
@@ -358,6 +357,24 @@ class Library(private val context: Context, private val cache: Cache, private va
             )
         }
         return b.build()
+    }
+
+    /** [mediaItem] for many tracks: a queue of the whole library. */
+    fun mediaItems(tracks: List<Track>): List<MediaItem> {
+        val downloaded = downloadedCheck()
+        return tracks.map { mediaItem(it, downloaded = downloaded(it)) }
+    }
+
+    /**
+     * [isDownloaded] for many tracks: one listing per album folder instead of a check per file, which on
+     * shared storage costs ≈0.25 ms, seconds for the whole library. The listings are not updated afterwards.
+     */
+    fun downloadedCheck(): (Track) -> Boolean {
+        val dirs = HashMap<String, Set<String>>()
+        return { t ->
+            val f = offlineFile(t.path)
+            f.name in dirs.getOrPut(f.parent.orEmpty()) { f.parentFile?.list()?.toHashSet().orEmpty() }
+        }
     }
 
     companion object {

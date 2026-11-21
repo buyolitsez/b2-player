@@ -226,7 +226,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     private fun restore(q: SavedQueue, play: Boolean, shuffle: Boolean? = null) = scope.launch {
         val c = controller ?: return@launch
         val cat = app.catalog.value ?: return@launch
-        val items = withContext(Dispatchers.IO) { q.ids.mapNotNull { cat.byId[it] }.map { library.mediaItem(it) } }
+        val items = withContext(Dispatchers.IO) { library.mediaItems(q.ids.mapNotNull { cat.byId[it] }) }
         if (items.isEmpty() || controller !== c) return@launch
         library.queueSource = q.ids
         if (shuffle != null) c.shuffleModeEnabled = shuffle
@@ -263,8 +263,8 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         c.shuffleModeEnabled = shuffled
         AppLog.d("ui", "Play ${tracks.size} tracks from ${tracks.first().album.dir}, start $start, shuffle $shuffled")
         val t0 = SystemClock.elapsedRealtime()
-        // A file check per track: for a 2600-track list that is too slow for the main thread.
-        val items = withContext(Dispatchers.IO) { tracks.map { library.mediaItem(it) } }
+        // Downloaded files are looked up for each track: too slow for the main thread with the whole library.
+        val items = withContext(Dispatchers.IO) { library.mediaItems(tracks) }
         AppLog.d("ui", "Queue items in ${SystemClock.elapsedRealtime() - t0} ms")
         if (controller !== c) return@launch
         library.queueSource = tracks.map { it.id }
@@ -287,7 +287,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun playNext(tracks: List<Track>) = scope.launch {
         val c = controller ?: return@launch
         if (c.mediaItemCount == 0) { play(tracks); return@launch }
-        val items = withContext(Dispatchers.IO) { tracks.filter { passes(it) }.map { library.mediaItem(it) } }
+        val items = withContext(Dispatchers.IO) { library.mediaItems(tracks.filter { passes(it) }) }
         if (controller !== c) return@launch
         val src = source()
         val at = src.indexOf(currentId) + 1
@@ -298,7 +298,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun addToEnd(tracks: List<Track>) = scope.launch {
         val c = controller ?: return@launch
         if (c.mediaItemCount == 0) { play(tracks); return@launch }
-        val items = withContext(Dispatchers.IO) { tracks.filter { passes(it) }.map { library.mediaItem(it) } }
+        val items = withContext(Dispatchers.IO) { library.mediaItems(tracks.filter { passes(it) }) }
         if (controller !== c) return@launch
         library.queueSource = source() + tracks.map { it.id }
         c.addMediaItems(items)
@@ -340,7 +340,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val src = source()
         library.queueSource = src
         val at = src.indexOf(c.currentMediaItem?.mediaId).takeIf { it >= 0 }
-        fun items(ids: List<String>) = ids.mapNotNull { cat.byId[it] }.filter { passes(it) }.map { library.mediaItem(it) }
+        fun items(ids: List<String>) = library.mediaItems(ids.mapNotNull { cat.byId[it] }.filter { passes(it) })
         val (before, after) = withContext(Dispatchers.IO) {
             if (at == null) emptyList<androidx.media3.common.MediaItem>() to items(src)
             else items(src.take(at)) to items(src.drop(at + 1))
