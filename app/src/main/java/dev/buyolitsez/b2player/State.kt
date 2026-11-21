@@ -48,6 +48,15 @@ class Playlists(context: Context) {
         }
     }
 
+    /** Renames made on the computer: [moved] maps an old track id to its new one, in the local copy and its base. */
+    @Synchronized fun rename(moved: (String) -> String) {
+        val e = prefs.edit()
+        for (k in listOf("data", "base")) prefs.getString(k, null)?.let { s ->
+            e.putString(k, toJson(parse(s).map { p -> p.copy(trackIds = p.trackIds.map(moved)) }).toString())
+        }
+        e.apply()
+    }
+
     private fun toJson(list: List<Playlist>) = JSONObject().put("version", 1).put(
         "playlists",
         JSONArray(list.map { p ->
@@ -95,6 +104,12 @@ class History(context: Context) {
             (local + remote).distinct().sortedBy { it.time }.also { if (it.size != local.size) { file.writeText(format(it)); cache = it } }
         }
         if (merged.size != remote.size) b2.upload(KEY, format(merged).toByteArray(), "text/tab-separated-values")
+    }
+
+    /** Renames made on the computer: [moved] maps an old track id to its new one. */
+    @Synchronized fun rename(moved: (String) -> String) {
+        val list = all().map { it.copy(trackId = moved(it.trackId)) }
+        file.writeText(format(list)); cache = list
     }
 
     private fun format(list: List<Play>) = list.joinToString("") { "${it.time}\t${it.trackId}\n" }

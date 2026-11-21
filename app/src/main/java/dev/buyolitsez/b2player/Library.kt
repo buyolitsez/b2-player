@@ -222,6 +222,36 @@ class Library(private val context: Context, private val cache: Cache, private va
         } finally { tmp.delete() }
     }
 
+    /**
+     * Applies renames made on the computer (contrib/cmus-b2-rename of the cmus fork) to the likes, the queues
+     * and the downloads here; [moved] maps an old track id or path to its new one, [pairs] are the old and new paths.
+     */
+    fun rename(moved: (String) -> String, pairs: List<Pair<String, String>>) {
+        synchronized(syncLock) {
+            synchronized(likesLock) {
+                val e = prefs.edit()
+                for (k in listOf("liked+", "liked-", "synced+", "synced-")) if (prefs.contains(k)) e.putStringSet(k, set(k).map(moved).toSet())
+                saveTimes(e, likeTimes.mapKeys { moved(it.key) })
+                e.apply()
+            }
+        }
+        savedQueues = savedQueues.map { q -> q.copy(ids = q.ids.map(moved)) }
+        currentQueue?.let { q -> currentQueue = q.copy(ids = q.ids.map(moved)) }
+        synchronized(this) {
+            for ((old, new) in pairs) {
+                val from = offlineFile(old); val to = offlineFile(new)
+                if (!from.exists() || to.exists()) continue
+                to.parentFile?.mkdirs()
+                if (from.renameTo(to)) pruneDirs(from.parentFile, offlineDir) else AppLog.w("rename", "Couldn't move the download $old")
+            }
+        }
+    }
+
+    /** How many lines of state/renames.tsv were applied here. */
+    var renamesSeen: Int
+        get() = prefs.getInt("renamesSeen", 0)
+        set(v) { prefs.edit().putInt("renamesSeen", v).apply() }
+
     fun deleteDownload(t: Track) {
         val f = offlineFile(t.path)
         f.delete()
