@@ -96,14 +96,26 @@ class MainActivity : ComponentActivity() {
             startActivity(batteryExemptionIntent(this))
         }
         ui.refreshCatalog()
-        // Likes and ratings made in cmus, and the queue it played, show up on return to the app and every minute while it is on screen.
+        // Likes and ratings made in cmus show up on return to the app and every minute while it is on screen.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
                     withContext(Dispatchers.IO) { runCatching { app.syncLikes() }; runCatching { app.syncRatings() } }
-                    runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
-                        .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
                     delay(60_000)
+                }
+            }
+        }
+        // What cmus plays, on return to the app and then as often as Ui.nextHandoffCheck says.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var last = 0L
+                while (true) {
+                    if (System.currentTimeMillis() >= ui.nextHandoffCheck(last)) {
+                        last = System.currentTimeMillis()
+                        runCatching { withContext(Dispatchers.IO) { app.handoffs.check(app.b2) } }
+                            .onSuccess { app.handoffs.offer = it }.onFailure { AppLog.w("handoff", "Now playing fetch failed", it) }
+                    }
+                    delay(1000)
                 }
             }
         }
@@ -191,6 +203,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     // What cmus played takes the place of this queue as soon as the catalog and the player are there.
     val handoff = ui.app.handoffs.offer
     LaunchedEffect(handoff, cat, ui.controller) { handoff?.let(ui::takeOver) }
+    LaunchedEffect(ui.remote, ui.controller) { ui.followRemote() }
     val stack = ui.stack()
     val screen = stack.last()
     val saved = rememberSaveableStateHolder()
