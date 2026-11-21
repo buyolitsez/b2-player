@@ -81,7 +81,7 @@ fun NowPlayingScreen(ui: Ui, cat: Catalog) {
         }
         // The line is always there, so the controls don't jump when a timer is set.
         val label = ui.remote?.let { "Playing on ${it.device.replaceFirstChar(Char::uppercase)}" } ?: sleepLabel(ui)
-        Text(label ?: "", Modifier.padding(top = 2.dp).then(if (label != null) Modifier.clickable { sleep = true } else Modifier),
+        Text(label ?: "", Modifier.padding(top = 2.dp).then(if (label != null && ui.remote == null) Modifier.clickable { sleep = true } else Modifier),
             style = MaterialTheme.typography.bodySmall, color = accent)
         Spacer(Modifier.height(8.dp))
         Slider(
