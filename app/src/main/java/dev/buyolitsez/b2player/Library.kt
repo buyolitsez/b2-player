@@ -22,6 +22,7 @@ import androidx.media3.datasource.cache.ContentMetadata
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 
 /** Streaming parse (android.util.JsonReader): about twice as fast as building org.json trees. */
@@ -199,7 +200,20 @@ class Library(private val context: Context, private val cache: Cache, private va
 
     fun offlineFile(path: String) = File(offlineDir, path)
     fun isDownloaded(t: Track) = offlineFile(t.path).exists()
-    fun isCached(t: Track) = t.size > 0 && cache.getCachedBytes(uriFor(t.path).toString(), 0, t.size) >= t.size
+    fun isCached(t: Track) = t.size > 0 && cache.getCachedBytes(uri(MUSIC, t.path).toString(), 0, t.size) >= t.size
+
+    /**
+     * [uriFor], [liteUriFor] and cover addresses, encoded once: encoding them anew took about a third of building
+     * a queue of the whole library.
+     */
+    private val uris = ConcurrentHashMap<String, Uri>()
+    private fun uri(prefix: String, path: String): Uri = uris.getOrPut(prefix + path) {
+        when (prefix) {
+            MUSIC -> uriFor(path)
+            LITE -> liteUriFor(path)
+            else -> Uri.parse("b2://bucket/" + Uri.encode(path, "/"))
+        }
+    }
 
     /**
      * Copies the original from the player's cache to [dst] when it is cached whole (a liked track that was just
@@ -367,8 +381,8 @@ class Library(private val context: Context, private val cache: Cache, private va
     fun mediaItem(t: Track, lite: Boolean = settings.liteStreaming.value, downloaded: Boolean = isDownloaded(t)): MediaItem {
         val uri = when {
             downloaded -> Uri.fromFile(offlineFile(t.path))
-            lite && t.liteSize > 0 && !isCached(t) -> liteUriFor(t.path)
-            else -> uriFor(t.path)
+            lite && t.liteSize > 0 && !isCached(t) -> uri(LITE, t.path)
+            else -> uri(MUSIC, t.path)
         }
         // A MIME type spares the player guessing the type from the decoded path of each item, on the main thread.
         val b = MediaItem.Builder().setMediaId(t.id).setUri(uri).setMimeType(MimeTypes.AUDIO_UNKNOWN)
@@ -376,7 +390,7 @@ class Library(private val context: Context, private val cache: Cache, private va
             .setMediaMetadata(
                 MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).setAlbumTitle(t.album.title)
                     .setTrackNumber(t.number).setIsPlayable(true).setIsBrowsable(false)
-                    .setArtworkUri(t.album.cover?.let { Uri.parse("b2://bucket/" + Uri.encode(it, "/")) })
+                    .setArtworkUri(t.album.cover?.let { uri("", it) })
                     .build()
             )
         t.start?.let { start ->
