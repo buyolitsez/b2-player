@@ -165,7 +165,7 @@ class MainActivity : ComponentActivity() {
         future.addListener({
             val c = future.get()
             c.addListener(object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) = ui.sync(player)
+                override fun onEvents(player: Player, events: Player.Events) = ui.sync(player, events)
                 // Otherwise a track that can't load, e.g. streamed without a network, just stays paused.
                 override fun onPlayerError(error: PlaybackException) {
                     val offline = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||

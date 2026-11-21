@@ -28,7 +28,17 @@ fun searchFold(s: String): String {
     return buildString { for (c in plain) CYRILLIC[c]?.let(::append) ?: append(c) }
 }
 
-private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
+/** The words of [s]: runs of letters and digits. A regex split here took most of the time of filtering 18k tracks. */
+private fun splitWords(s: String): List<String> {
+    val out = ArrayList<String>()
+    var start = -1
+    for (i in 0..s.length) {
+        val inWord = i < s.length && s[i].isLetterOrDigit()
+        if (inWord && start < 0) start = i
+        if (!inWord && start >= 0) { out.add(s.substring(start, i)); start = -1 }
+    }
+    return out
+}
 
 /**
  * What was typed in a search field. A key matches when each typed word is found in it: as is, or as the start of
@@ -36,7 +46,7 @@ private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
  */
 class Query(text: String) {
     val folded = searchFold(text.trim())
-    private val words = folded.split(NON_WORD).filter { it.isNotEmpty() }
+    private val words = splitWords(folded)
 
     fun isEmpty() = words.isEmpty()
 
@@ -46,7 +56,7 @@ class Query(text: String) {
         var keyWords: List<String>? = null
         var best = 1
         for (w in words) {
-            val kw = keyWords ?: key.split(NON_WORD).also { keyWords = it }
+            val kw = keyWords ?: splitWords(key).also { keyWords = it }
             best = maxOf(best, when {
                 kw.any { it.startsWith(w) } -> 1
                 w in key || w in kw.joinToString("") -> 2
