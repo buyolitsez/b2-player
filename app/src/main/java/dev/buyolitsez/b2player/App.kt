@@ -150,6 +150,26 @@ class App : Application() {
         followLikes(liked, true); followLikes(unliked, false)
     }
 
+    /**
+     * Folders and files renamed on the computer are listed in state/renames.tsv as "old<TAB>new" paths, and the
+     * bucket's likes, playlists and history already have the new ids: the local copies of those, the queues and the
+     * downloads get them here, before they sync. Runs the lines not applied yet.
+     */
+    fun applyRenames() {
+        val lines = b2.fetchOrNull("state/renames.tsv")?.decodeToString()?.lines().orEmpty().filter { '\t' in it }
+        if (lines.size <= library.renamesSeen) return
+        val pairs = lines.drop(library.renamesSeen).map { it.substringBefore('\t') to it.substringAfter('\t') }
+        fun moved(id: String): String {
+            for ((old, new) in pairs) if (id == old || id.startsWith("$old/") || id.startsWith("$old#")) return new + id.substring(old.length)
+            return id
+        }
+        library.rename(::moved, pairs)
+        playlists.rename(::moved)
+        history.rename(::moved)
+        library.renamesSeen = lines.size
+        AppLog.i("rename", "Applied ${pairs.size} renames")
+    }
+
     /** Syncs album ratings with the bucket; ratings from cmus or the diary re-read the lists. */
     fun syncRatings() { if (ratings.sync(b2)) likesChanged.update { it + 1 } }
 
