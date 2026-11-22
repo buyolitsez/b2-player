@@ -175,9 +175,7 @@ class Cmus(private val cat: Catalog) : AssistantHost {
         list.map { if (it.id == p.id) it.copy(trackIds = it.trackIds + tracks.map { t -> t.id }.filter { id -> id !in it.trackIds }, updated = System.currentTimeMillis()) else it }
     }
 
-    override fun history(): List<Play> = state("state/history.tsv").orEmpty().lineSequence().mapNotNull { l ->
-        val tab = l.indexOf('\t'); if (tab <= 0) null else l.substring(0, tab).toLongOrNull()?.let { Play(l.substring(tab + 1), it) }
-    }.toList()
+    override fun history(): List<Play> = parseHistory(state("state/history.tsv").orEmpty())
 
     /** Album id -> {"rating": …}. */
     private fun ratings() = ratings ?: (state("state/ratings.json")?.let { mapper.readTree(it) }?.path("albums") ?: mapper.createObjectNode())
