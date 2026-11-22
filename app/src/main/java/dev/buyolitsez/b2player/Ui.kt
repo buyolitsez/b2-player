@@ -759,6 +759,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             runCatching { app.lastFm.flush() }
             AppLog.i("sync", "Likes, ratings, playlists and history synced in ${System.currentTimeMillis() - syncStarted} ms")
         }.join()
+        withContext(Dispatchers.IO) { runCatching { app.downloadMissingLiked() }.onFailure { AppLog.w("download", "Liked downloads check failed", it) } }
         version++
     }
 }

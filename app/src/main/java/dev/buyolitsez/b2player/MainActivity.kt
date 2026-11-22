@@ -102,10 +102,17 @@ class MainActivity : ComponentActivity() {
         }
         ui.refreshCatalog()
         // Likes and ratings made in cmus show up on return to the app and every minute while it is on screen.
+        // Renames on the computer come first, and a library changed by them is loaded again.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
-                    withContext(Dispatchers.IO) { runCatching { app.syncLikes() }; runCatching { app.syncRatings() } }
+                    val stale = withContext(Dispatchers.IO) {
+                        val renamed = runCatching { app.applyRenames() }.getOrDefault(false)
+                        val unknown = runCatching { app.syncLikes() }.getOrDefault(false)
+                        runCatching { app.syncRatings() }
+                        renamed || unknown
+                    }
+                    if (stale && ui.status != Ui.UPDATING) ui.refreshCatalog()
                     delay(60_000)
                 }
             }
