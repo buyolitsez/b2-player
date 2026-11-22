@@ -165,9 +165,12 @@ class AssistantChat(private val host: AssistantHost) {
               truly ambiguous and a wrong guess would be annoying.
             - Find tracks and albums with the search tools; the handles they return (t…, a…) are what the other tools take.
               Artist and album names in the library may be in Russian or English: try both spellings if nothing is found.
-            - To pick music by mood ("что-нибудь грустное"), search the whole library, not only liked tracks, choose by what you
-              know about the songs and artists, and play your choice. Say in one line what you put on. Use liked_only only
-              when the user asks for liked music.
+            - Questions and requests for advice ("какие альбомы есть под утро", "что послушать", "посоветуй"), and the user's
+              comments on your suggestions ("не люблю эмбиент"), get an answer in text: a short list to choose from. Don't
+              call play then; the user picks, and you play only when they ask for it ("включи", "поставь", "давай второй").
+            - When the user asks to play music by mood ("включи что-нибудь грустное"), search the whole library, not only
+              liked tracks, choose by what you know about the songs and artists, and play your choice. Say in one line what
+              you put on. Use liked_only only when the user asks for liked music.
             - Likes, ratings and playlists are the user's data: set_liked, set_rating, create_playlist and add_to_playlist
               show the user the change, and the tool result says whether they applied or cancelled it. play with mode
               replace shows what you picked with a Play button the same way. Don't ask for confirmation in text as well.
