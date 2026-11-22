@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,8 +85,9 @@ class Assistant(private val ui: Ui) {
         override val intro = """
             You are the assistant inside B2 Player, the user's personal music player on Android. The chat is small: keep replies
             short. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links. The queue has its own liked filter.
-            Make albums, tracks and artists from the library that you name tappable with links: [title](a12) or [title](t345)
-            with the handle, [name](artist) with the artist's name as in the library. Don't put links inside bold.
+            Albums, tracks and artists from the library are always written as links the user can tap: [title](a12) or
+            [title](t345) with the handle, [name](artist) with the artist's name as in the library. This holds in every
+            reply, also when listing what the library has. Write them as links instead of bold, and don't put links inside bold.
         """.trimIndent()
         override val currentId get() = ui.currentId
         override val playing get() = ui.playing
@@ -172,7 +174,12 @@ fun AssistantScreen(ui: Ui) {
     }
     var input by remember { mutableStateOf("") }
     val list = rememberLazyListState()
-    LaunchedEffect(a.entries.size, a.busy, a.queued.size) { if (a.entries.isNotEmpty()) list.animateScrollToItem(a.entries.size + a.queued.size) }
+    // Scrolls down when the chat grows, not on coming back to it from an album opened by a link.
+    var seen by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(a.entries.size, a.busy, a.queued.size) {
+        val now = "${a.entries.size}/${a.busy}/${a.queued.size}"
+        if (now != seen) { seen = now; if (a.entries.isNotEmpty()) list.animateScrollToItem(a.entries.size + a.queued.size) }
+    }
     // Android's own speech recognition dialog: no microphone permission needed. The text goes into the field to edit and send.
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { input = if (input.isBlank()) it else "${input.trimEnd()} $it" }
