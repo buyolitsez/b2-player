@@ -13,6 +13,7 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.work.WorkManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -143,13 +144,37 @@ class App : Application() {
     /** Bumped on every like or unlike, from the app or the media notification, and on ratings from elsewhere. */
     val likesChanged = MutableStateFlow(0)
 
-    /** Syncs likes with the bucket; likes made in cmus re-read the lists and download or delete those tracks. */
-    fun syncLikes() {
+    /**
+     * Syncs likes with the bucket; likes made in cmus re-read the lists and download or delete those tracks.
+     * Returns whether likes changed on tracks this catalog doesn't have: the bucket has a newer one. Renames on the
+     * computer change the likes before the phone has the new paths and has moved its downloads to them, so the old
+     * ids look unliked then; their downloads are kept for [applyRenames] to move.
+     */
+    fun syncLikes(): Boolean {
         val ids = library.syncLikes(b2)
-        if (ids.isEmpty()) return
+        if (ids.isEmpty()) return false
         likesChanged.update { it + 1 }
-        val (liked, unliked) = (catalog.value?.tracks ?: return).filter { it.id in ids }.partition { library.isLiked(it) }
-        followLikes(liked, true); followLikes(unliked, false)
+        val cat = catalog.value ?: return false
+        val (liked, unliked) = cat.tracks.filter { it.id in ids }.partition { library.isLiked(it) }
+        val stale = ids.any { it !in cat.byId }
+        followLikes(liked, true)
+        if (!stale) followLikes(unliked, false)
+        return stale
+    }
+
+    /**
+     * Liked tracks are kept on the phone: downloads that failed for good or were lost get another go once per
+     * library load. Not while downloads run or wait: two workers on one file would write the same part file.
+     */
+    fun downloadMissingLiked() {
+        if (!prefs.autoDownloadLiked.value) return
+        val cat = catalog.value ?: return
+        if (WorkManager.getInstance(this).getWorkInfosByTag(DownloadWorker.TAG).get().any { !it.state.isFinished }) return
+        val downloaded = library.downloadedCheck()
+        val missing = cat.tracks.filter { library.isLiked(it) && !downloaded(it) }
+        if (missing.isEmpty()) return
+        AppLog.i("download", "${missing.size} liked tracks aren't on the phone")
+        DownloadWorker.enqueue(this, "liked-missing", "${missing.size} liked tracks", missing, wifiOnly = prefs.autoWifiOnly.value)
     }
 
     /**
@@ -157,9 +182,9 @@ class App : Application() {
      * bucket's likes, playlists and history already have the new ids: the local copies of those, the queues and the
      * downloads get them here, before they sync. Runs the lines not applied yet.
      */
-    fun applyRenames() {
+    @Synchronized fun applyRenames(): Boolean {
         val lines = b2.fetchOrNull("state/renames.tsv")?.decodeToString()?.lines().orEmpty().filter { '\t' in it }
-        if (lines.size <= library.renamesSeen) return
+        if (lines.size <= library.renamesSeen) return false
         val pairs = lines.drop(library.renamesSeen).map { it.substringBefore('\t') to it.substringAfter('\t') }
         fun moved(id: String): String {
             for ((old, new) in pairs) if (id == old || id.startsWith("$old/") || id.startsWith("$old#")) return new + id.substring(old.length)
@@ -170,6 +195,7 @@ class App : Application() {
         history.rename(::moved)
         library.renamesSeen = lines.size
         AppLog.i("rename", "Applied ${pairs.size} renames")
+        return true
     }
 
     /** Syncs album ratings with the bucket; ratings from cmus or the diary re-read the lists. */
