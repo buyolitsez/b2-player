@@ -126,10 +126,13 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val c = controller ?: return
         if (queueFilter == LikeFilter.All) return
         val byId = app.catalog.value?.byId ?: return
+        var removed = false
         for (i in c.mediaItemCount - 1 downTo 0) {
             val t = byId[c.getMediaItemAt(i).mediaId] ?: continue
-            if (i != c.currentMediaItemIndex && !passes(t)) c.removeMediaItem(i)
+            if (i != c.currentMediaItemIndex && !passes(t)) { c.removeMediaItem(i); removed = true }
         }
+        // A queue row's menu keeps its index, which now may point at another track.
+        if (removed && trackMenu?.queueIndex != null) trackMenu = null
     }
 
     /**
