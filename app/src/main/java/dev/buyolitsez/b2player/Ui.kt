@@ -100,11 +100,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var selection by mutableStateOf(listOf<Track>())
     fun toggleSelected(t: Track) { selection = if (selection.any { it.id == t.id }) selection.filter { it.id != t.id } else selection + t }
 
-    init {
-        // Likes from here and from the media notification re-read the lists.
-        scope.launch { app.likesChanged.collect { version++ } }
-    }
-
     var controller by mutableStateOf<MediaController?>(null)
     var currentId by mutableStateOf<String?>(null)
     var currentIndex by mutableIntStateOf(0)
@@ -117,6 +112,28 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var playOrder by mutableStateOf(listOf<Int>())
     /** The queue and play order [moveInQueue] expects, see [sync]. */
     private var movedOrder: Pair<List<String>, List<Int>>? = null
+
+    init {
+        // Likes from here and from the media notification re-read the lists.
+        scope.launch { app.likesChanged.collect { version++; dropFiltered() } }
+    }
+
+    /**
+     * With the queue filter on, a track liked or unliked here, in the notification or in cmus leaves the queue.
+     * The current track plays on. The tracks stay in [source], so the All filter brings them back.
+     */
+    private fun dropFiltered() {
+        val c = controller ?: return
+        if (queueFilter == LikeFilter.All) return
+        val byId = app.catalog.value?.byId ?: return
+        var removed = false
+        for (i in c.mediaItemCount - 1 downTo 0) {
+            val t = byId[c.getMediaItemAt(i).mediaId] ?: continue
+            if (i != c.currentMediaItemIndex && !passes(t)) { c.removeMediaItem(i); removed = true }
+        }
+        // A queue row's menu keeps its index, which now may point at another track.
+        if (removed && trackMenu?.queueIndex != null) trackMenu = null
+    }
 
     /**
      * [events] null reads everything. The queue and its play order are read again only when they change:
