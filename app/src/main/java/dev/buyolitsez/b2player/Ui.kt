@@ -39,7 +39,14 @@ enum class LikeFilter(val title: String) { All("All"), Liked("Liked"), NotLiked(
 
 enum class AlbumSort(val title: String) { Artist("By artist"), Recent("Recently added"), Liked("Recently liked"), Rating("By rating") }
 
-enum class TrackSort(val title: String) { Artist("By artist"), Recent("Recently added"), Liked("Recently liked") }
+enum class TrackSort(val title: String) {
+    Artist("By artist"), Recent("Recently added"), Liked("Recently liked"), Title("By title"), Album("By album"), Year("By year"), Length("By length"),
+}
+
+/** Orders a screen's tracks can be listed in, picked in its ⋯ menu; [Own] is the order of the album, playlist or folder. */
+enum class ListSort(val title: String) {
+    Own("Default"), Title("Title"), Artist("Artist"), Album("Album"), Year("Year"), Length("Length"), Added("Recently added"), Liked("Recently liked"),
+}
 
 sealed interface Screen {
     data object Root : Screen
