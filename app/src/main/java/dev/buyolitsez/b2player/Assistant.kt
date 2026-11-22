@@ -87,7 +87,8 @@ class Assistant(private val ui: Ui) {
             short. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links. The queue has its own liked filter.
             Albums, tracks and artists from the library are always written as links the user can tap: [title](a12) or
             [title](t345) with the handle, [name](artist) with the artist's name as in the library. This holds in every
-            reply, also when listing what the library has. Write them as links instead of bold, and don't put links inside bold.
+            reply, also when listing what the library has, and an album heading above its tracks is a link too. Write them as
+            links instead of bold, and don't put links inside bold.
         """.trimIndent()
         override val currentId get() = ui.currentId
         override val playing get() = ui.playing
