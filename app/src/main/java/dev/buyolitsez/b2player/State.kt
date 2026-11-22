@@ -78,19 +78,20 @@ class Playlists(context: Context) {
 
 /**
  * Listening history: one line per counted play in filesDir/history.tsv, merged with
- * state/history.tsv in the bucket (union of both).
+ * state/history.tsv in the bucket (union of both). Plays recorded here are marked "phone".
  */
 class History(context: Context) {
     private val file = File(context.filesDir, "history.tsv")
     private var cache: List<Play>? = null
 
     @Synchronized
-    fun all(): List<Play> = cache ?: (if (file.exists()) parse(file.readText()) else emptyList()).also { cache = it }
+    fun all(): List<Play> = cache ?: (if (file.exists()) parseHistory(file.readText()) else emptyList()).also { cache = it }
 
     @Synchronized
     fun record(trackId: String, time: Long = System.currentTimeMillis()) {
-        file.appendText("$time\t$trackId\n")
-        cache = all() + Play(trackId, time)
+        val play = Play(trackId, time, DEVICE)
+        file.appendText(formatHistory(listOf(play)))
+        cache = all() + play
     }
 
     @Synchronized
@@ -98,26 +99,21 @@ class History(context: Context) {
 
     /** The network calls run outside the lock, so that [all] on the main thread never waits for them. */
     fun sync(b2: B2) {
-        val remote = b2.fetchOrNull(KEY)?.decodeToString()?.let { parse(it) } ?: emptyList()
+        val remote = b2.fetchOrNull(KEY)?.decodeToString()?.let { parseHistory(it) } ?: emptyList()
         val merged = synchronized(this) {
             val local = all()
-            (local + remote).distinct().sortedBy { it.time }.also { if (it.size != local.size) { file.writeText(format(it)); cache = it } }
+            mergeHistory(local, remote).also { if (it != local) { file.writeText(formatHistory(it)); cache = it } }
         }
-        if (merged.size != remote.size) b2.upload(KEY, format(merged).toByteArray(), "text/tab-separated-values")
+        if (merged != remote) b2.upload(KEY, formatHistory(merged).toByteArray(), "text/tab-separated-values")
     }
 
     /** Renames made on the computer: [moved] maps an old track id to its new one. */
     @Synchronized fun rename(moved: (String) -> String) {
         val list = all().map { it.copy(trackId = moved(it.trackId)) }
-        file.writeText(format(list)); cache = list
+        file.writeText(formatHistory(list)); cache = list
     }
 
-    private fun format(list: List<Play>) = list.joinToString("") { "${it.time}\t${it.trackId}\n" }
-    private fun parse(s: String) = s.lineSequence().mapNotNull { l ->
-        val tab = l.indexOf('\t'); if (tab <= 0) null else l.substring(0, tab).toLongOrNull()?.let { Play(l.substring(tab + 1), it) }
-    }.toList()
-
-    companion object { const val KEY = "state/history.tsv" }
+    companion object { const val KEY = "state/history.tsv"; const val DEVICE = "phone" }
 }
 
 /**

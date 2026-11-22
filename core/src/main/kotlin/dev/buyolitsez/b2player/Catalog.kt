@@ -187,7 +187,22 @@ fun mergePlaylists(base: List<Playlist>, local: List<Playlist>, remote: List<Pla
     }
 }
 
-data class Play(val trackId: String, val time: Long)
+/** A counted play. [device] is where it was played: "phone", "mac", "arch", or "" for plays from before it was kept. */
+data class Play(val trackId: String, val time: Long, val device: String = "")
+
+/**
+ * state/history.tsv: "ms<TAB>track id", and since the device was kept, "<TAB>device" after it. Apps from before that
+ * read the third column as part of the track id, so such lines don't count there but survive their merges.
+ */
+fun parseHistory(s: String): List<Play> = s.lineSequence().mapNotNull { l ->
+    val f = l.split('\t'); if (f.size < 2 || f[1].isEmpty()) null else f[0].toLongOrNull()?.let { Play(f[1], it, f.getOrElse(2) { "" }) }
+}.toList()
+
+fun formatHistory(list: List<Play>) = list.joinToString("") { "${it.time}\t${it.trackId}${if (it.device.isEmpty()) "" else "\t" + it.device}\n" }
+
+/** Both lists in time order, each play once; a play known with its device and without it keeps the device. */
+fun mergeHistory(a: List<Play>, b: List<Play>) =
+    (a + b).sortedWith(compareBy<Play>({ it.time }, { it.trackId }, { it.device.isEmpty() })).distinctBy { it.time to it.trackId }
 
 fun formatTime(sec: Double): String {
     val s = sec.toLong()

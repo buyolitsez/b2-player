@@ -25,7 +25,7 @@ prepared in advance by a script on the computer that holds the library.
   state/likes.json         likes (differences from the catalog's flags)
   state/playlists.json     playlists
   state/ratings.json       album ratings 1-10 (from the listening diary, and set in the app or cmus)
-  state/history.tsv        listening history: time and track id
+  state/history.tsv        listening history: time, track id and device (phone, mac, arch; none on old lines)
   state/now-playing.json   the shared queue: played tracks, current track, the rest and the position, from the phone or cmus
   state/tags.json          tag edits made on the phone, not yet written to files
   logs/<date>.log          phone log after errors
