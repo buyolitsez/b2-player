@@ -358,7 +358,7 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String, query: MutableState<String>
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
-            if (path.isNotEmpty()) item { PlayButtons(ui, "folder:$path", f.name, all, count = true, order = order) }
+            if (path.isNotEmpty()) item { Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, "folder:$path", f.name, all, count = true, order = order) } }
             items(subs, key = { "f" + it.path }) { s ->
                 ListRow(Icons.Default.Folder, s.name, "${s.allTracks.size} tracks") { ui.open(Screen.FolderView(s.path)) }
             }
