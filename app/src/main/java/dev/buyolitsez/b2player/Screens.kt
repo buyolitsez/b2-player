@@ -141,9 +141,9 @@ fun sortTracks(ui: Ui, list: List<Track>): List<Track> {
 /** How [s] orders tracks; null for the list's own order. Equal tracks keep their order, so an album stays in track order. */
 fun trackOrder(ui: Ui, s: ListSort): Comparator<Track>? = when (s) {
     ListSort.Own -> null
-    ListSort.Title -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
-    ListSort.Artist -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist }
-    ListSort.Album -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.album.title }
+    ListSort.Title -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title.trimStart() }
+    ListSort.Artist -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist.trimStart() }
+    ListSort.Album -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.album.title.trimStart() }
     // Albums without a year go last.
     ListSort.Year -> compareBy { it.album.year ?: Int.MAX_VALUE }
     ListSort.Length -> compareBy { it.duration }
