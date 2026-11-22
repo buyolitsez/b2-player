@@ -102,7 +102,21 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     init {
         // Likes from here and from the media notification re-read the lists.
-        scope.launch { app.likesChanged.collect { version++ } }
+        scope.launch { app.likesChanged.collect { version++; dropFiltered() } }
+    }
+
+    /**
+     * With the queue filter on, a track liked or unliked here, in the notification or in cmus leaves the queue.
+     * The current track plays on. The tracks stay in [source], so the All filter brings them back.
+     */
+    private fun dropFiltered() {
+        val c = controller ?: return
+        if (queueFilter == LikeFilter.All) return
+        val byId = app.catalog.value?.byId ?: return
+        for (i in c.mediaItemCount - 1 downTo 0) {
+            val t = byId[c.getMediaItemAt(i).mediaId] ?: continue
+            if (i != c.currentMediaItemIndex && !passes(t)) c.removeMediaItem(i)
+        }
     }
 
     var controller by mutableStateOf<MediaController?>(null)
