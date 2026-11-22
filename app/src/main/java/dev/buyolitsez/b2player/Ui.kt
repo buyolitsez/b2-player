@@ -100,6 +100,19 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var selection by mutableStateOf(listOf<Track>())
     fun toggleSelected(t: Track) { selection = if (selection.any { it.id == t.id }) selection.filter { it.id != t.id } else selection + t }
 
+    var controller by mutableStateOf<MediaController?>(null)
+    var currentId by mutableStateOf<String?>(null)
+    var currentIndex by mutableIntStateOf(0)
+    var queueIds by mutableStateOf(listOf<String>())
+    var playing by mutableStateOf(false)
+    var shuffle by mutableStateOf(false)
+    var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
+    var nextId by mutableStateOf<String?>(null)
+    /** Queue indices in play order: the shuffle order when shuffle is on. */
+    var playOrder by mutableStateOf(listOf<Int>())
+    /** The queue and play order [moveInQueue] expects, see [sync]. */
+    private var movedOrder: Pair<List<String>, List<Int>>? = null
+
     init {
         // Likes from here and from the media notification re-read the lists.
         scope.launch { app.likesChanged.collect { version++; dropFiltered() } }
@@ -118,19 +131,6 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
             if (i != c.currentMediaItemIndex && !passes(t)) c.removeMediaItem(i)
         }
     }
-
-    var controller by mutableStateOf<MediaController?>(null)
-    var currentId by mutableStateOf<String?>(null)
-    var currentIndex by mutableIntStateOf(0)
-    var queueIds by mutableStateOf(listOf<String>())
-    var playing by mutableStateOf(false)
-    var shuffle by mutableStateOf(false)
-    var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
-    var nextId by mutableStateOf<String?>(null)
-    /** Queue indices in play order: the shuffle order when shuffle is on. */
-    var playOrder by mutableStateOf(listOf<Int>())
-    /** The queue and play order [moveInQueue] expects, see [sync]. */
-    private var movedOrder: Pair<List<String>, List<Int>>? = null
 
     /**
      * [events] null reads everything. The queue and its play order are read again only when they change:
