@@ -73,6 +73,8 @@ class Prefs(context: Context) {
     val askedBattery = Bool("askedBattery", false)
     // Library
     val albumGrid = Bool("albumGrid", true)
+    /** An artist opens on the list of all their tracks instead of their albums. */
+    val artistTracks = Bool("artistTracks", false)
     /** An [AlbumSort] name. */
     val albumSort = Str("albumSort", "Artist")
     /** A [TrackSort] name. */

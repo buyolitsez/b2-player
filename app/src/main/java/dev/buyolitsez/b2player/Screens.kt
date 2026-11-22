@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
@@ -236,15 +237,31 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     val tracks = remember(albums) { albums.flatMap { it.tracks } }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val shown = remember(albums, fq) { albums.filterBy(fq) { it.searchKey } }
-    Column {
-        FilterField(ui, q) { q = it }
-        AlbumGrid(ui, shown, header = {
+    val byTracks = ui.prefs.artistTracks
+    val header = @Composable {
+        Column {
             PlayButtons(ui, "artist:$name", name, tracks, count = true, menu = { close ->
                 DropdownMenuItem({ Text("Delete from bucket") }, { close(); ui.deleting = Ui.DeleteRequest(name, tracks, true) },
                     leadingIcon = { Icon(Icons.Default.DeleteForever, null) })
             })
-        }, showArtist = false)
+            Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill("Albums", active = !byTracks.value) { byTracks.set(false) }
+                Pill("Tracks", active = byTracks.value) { byTracks.set(true) }
+            }
+        }
+    }
+    Column {
+        FilterField(ui, q) { q = it }
+        if (byTracks.value) {
+            val shown = remember(tracks, fq) { tracks.filterBy(fq) { it.searchKey } }
+            LazyColumn(contentPadding = listPadding()) {
+                item { Box(Modifier.padding(horizontal = 20.dp)) { header() } }
+                itemsIndexed(shown, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(shown, i) }) }
+            }
+        } else {
+            val shown = remember(albums, fq) { albums.filterBy(fq) { it.searchKey } }
+            AlbumGrid(ui, shown, header = header, showArtist = false)
+        }
     }
 }
 
@@ -353,7 +370,7 @@ fun SearchTab(ui: Ui, cat: Catalog) {
 
 /**
  * Download, add to playlist and a menu on the left, shuffle and a large play button on the right.
- * [count] shows the number of tracks; [menu] adds rows to the menu after "Add to queue".
+ * [count] shows the number of tracks; [menu] adds rows to the menu after "Play next" and "Add to queue".
  */
 @UnstableApi
 @Composable
@@ -393,6 +410,7 @@ fun PlayButtons(
         Box {
             SmallIcon(Icons.Default.MoreHoriz, Color(0xFFC9C9C9), 24.dp) { open = true }
             DropdownMenu(open, close, containerColor = Gray2) {
+                DropdownMenuItem({ Text("Play next") }, { close(); ui.playNext(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) })
                 DropdownMenuItem({ Text("Add to queue") }, { close(); ui.addToEnd(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) })
                 menu?.invoke(this, close)
             }
