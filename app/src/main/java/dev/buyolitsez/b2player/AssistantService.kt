@@ -19,9 +19,13 @@ class AssistantService : Service() {
     override fun onBind(intent: Intent?) = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        NotificationManagerCompat.from(this).createNotificationChannel(
-            NotificationChannelCompat.Builder(CHANNEL, NotificationManagerCompat.IMPORTANCE_LOW).setName("Assistant").build()
-        )
+        // The notification is only the price of the foreground service: a minimal channel keeps it out of the status bar
+        // and folded at the bottom of the shade. A channel's importance can't be raised or reliably lowered once created,
+        // hence the new id instead of the old low-importance "assistant" channel.
+        NotificationManagerCompat.from(this).apply {
+            deleteNotificationChannel("assistant")
+            createNotificationChannel(NotificationChannelCompat.Builder(CHANNEL, NotificationManagerCompat.IMPORTANCE_MIN).setName("Assistant").build())
+        }
         val n = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("Assistant is answering").setOngoing(true)
             .setContentIntent(PendingIntent.getActivity(this, NOTIFICATION, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
@@ -38,7 +42,7 @@ class AssistantService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "assistant"
+        private const val CHANNEL = "assistant_quiet"
         private const val NOTIFICATION = 5
         private var wanted = false
         private var running: AssistantService? = null
