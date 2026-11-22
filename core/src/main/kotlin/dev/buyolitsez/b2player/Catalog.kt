@@ -54,12 +54,15 @@ class Query(text: String) {
     fun rank(key: String): Int? {
         if (words.isEmpty() || key.startsWith(folded)) return 0
         var keyWords: List<String>? = null
+        var squeezed: String? = null
         var best = 1
         for (w in words) {
             val kw = keyWords ?: splitWords(key).also { keyWords = it }
+            // Without spaces and punctuation, so "darkside" finds "Dark Side"; the fields (title, artist…) stay apart.
+            val sq = squeezed ?: key.filter { it.isLetterOrDigit() || it == '\u0000' }.also { squeezed = it }
             best = maxOf(best, when {
                 kw.any { it.startsWith(w) } -> 1
-                w in key || w in kw.joinToString("") -> 2
+                w in key || w in sq -> 2
                 kw.any { typos(w, it) <= w.length / 4 } -> 3
                 else -> return null
             })
@@ -87,12 +90,11 @@ private fun typos(w: String, key: String): Int {
 fun <T> List<T>.search(q: Query, key: (T) -> String): List<T> =
     if (q.isEmpty()) this else mapNotNull { x -> q.rank(key(x))?.let { x to it } }.sortedBy { it.second }.map { it.first }
 
-/** Items matching [q] in their own order. Matches with typos are left out when there are ones without, so "love" does not also list "live". */
+/** Items matching [q] in their own order. Matches with typos come after the others, so "love" lists "live" only at the end. */
 fun <T> List<T>.filterBy(q: Query, key: (T) -> String): List<T> {
     if (q.isEmpty()) return this
     val ranked = mapNotNull { x -> q.rank(key(x))?.let { x to it } }
-    val exact = ranked.filter { it.second < 3 }
-    return (exact.ifEmpty { ranked }).map { it.first }
+    return ranked.sortedBy { it.second == 3 }.map { it.first }
 }
 
 class Album(
