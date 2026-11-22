@@ -131,8 +131,51 @@ fun sortTracks(ui: Ui, list: List<Track>): List<Track> {
         // Tracks liked together keep their album order.
         TrackSort.Liked -> list.map { it to ui.likeOrder(it) }.filter { since == 0L || it.second >= since }
             .sortedWith(compareByDescending<Pair<Track, Long>> { it.second }.thenByDescending { it.first.album.added }).map { it.first }
+        TrackSort.Title -> list.sortedWith(trackOrder(ui, ListSort.Title)!!)
+        TrackSort.Album -> list.sortedWith(trackOrder(ui, ListSort.Album)!!)
+        TrackSort.Year -> list.sortedWith(trackOrder(ui, ListSort.Year)!!)
+        TrackSort.Length -> list.sortedWith(trackOrder(ui, ListSort.Length)!!)
     }
 }
+
+/** How [s] orders tracks; null for the list's own order. Equal tracks keep their order, so an album stays in track order. */
+fun trackOrder(ui: Ui, s: ListSort): Comparator<Track>? = when (s) {
+    ListSort.Own -> null
+    ListSort.Title -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+    ListSort.Artist -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist }
+    ListSort.Album -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.album.title }
+    // Albums without a year go last.
+    ListSort.Year -> compareBy { it.album.year ?: Int.MAX_VALUE }
+    ListSort.Length -> compareBy { it.duration }
+    ListSort.Added -> compareByDescending { it.album.added }
+    ListSort.Liked -> compareByDescending { ui.likeOrder(it) }
+}
+
+/** The orders that change something in [tracks]: those by which at least two of them differ. */
+fun sortsFor(ui: Ui, tracks: List<Track>): List<ListSort> = ListSort.entries.filter { s ->
+    val c = trackOrder(ui, s)
+    c == null || tracks.any { c.compare(it, tracks[0]) != 0 }
+}
+
+/** The order of a screen's tracks; picking the current order again turns it around. */
+class TrackListOrder(private val by: MutableState<ListSort>, private val down: MutableState<Boolean>) {
+    val sort get() = by.value
+    val reversed get() = down.value
+    val isOwn get() = sort == ListSort.Own && !reversed
+
+    fun pick(s: ListSort) { if (s == sort) down.value = !reversed else { by.value = s; down.value = false } }
+
+    /** [list] in this order, [track] being the track of an item. */
+    fun <T> apply(ui: Ui, list: List<T>, track: (T) -> Track): List<T> {
+        val c = trackOrder(ui, sort) ?: return if (reversed) list.asReversed() else list
+        return list.sortedWith(compareBy(if (reversed) c.reversed() else c, track))
+    }
+
+    fun apply(ui: Ui, tracks: List<Track>) = apply(ui, tracks) { it }
+}
+
+@Composable
+fun rememberTrackListOrder() = TrackListOrder(rememberSaveable { mutableStateOf(ListSort.Own) }, rememberSaveable { mutableStateOf(false) })
 
 /** The period of "Recently added" and "Recently liked", shared by albums and tracks. */
 @UnstableApi
@@ -204,7 +247,10 @@ fun TracksTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
                 when (sort) {
                     TrackSort.Artist -> initial(tracks[i].album.artist)
                     TrackSort.Recent -> monthLabel(tracks[i].album.added * 1000)
-                    TrackSort.Liked -> null
+                    TrackSort.Liked, TrackSort.Length -> null
+                    TrackSort.Title -> initial(tracks[i].title)
+                    TrackSort.Album -> initial(tracks[i].album.title)
+                    TrackSort.Year -> tracks[i].album.year?.toString()
                 }
             }, offset = 1)
         }
@@ -238,9 +284,11 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
     val byTracks = ui.prefs.artistTracks
+    val order = rememberTrackListOrder()
+    val shownTracks = remember(tracks, fq, order.sort, order.reversed, ui.version) { order.apply(ui, tracks).filterBy(fq) { it.searchKey } }
     val header = @Composable {
         Column {
-            PlayButtons(ui, "artist:$name", name, tracks, count = true, menu = { close ->
+            PlayButtons(ui, "artist:$name", name, if (byTracks.value) shownTracks else tracks, count = true, order = order.takeIf { byTracks.value }, menu = { close ->
                 DropdownMenuItem({ Text("Delete from bucket") }, { close(); ui.deleting = Ui.DeleteRequest(name, tracks, true) },
                     leadingIcon = { Icon(Icons.Default.DeleteForever, null) })
             })
@@ -253,10 +301,9 @@ fun ArtistScreen(ui: Ui, cat: Catalog, name: String) {
     Column {
         FilterField(ui, q) { q = it }
         if (byTracks.value) {
-            val shown = remember(tracks, fq) { tracks.filterBy(fq) { it.searchKey } }
             LazyColumn(contentPadding = listPadding()) {
                 item { Box(Modifier.padding(horizontal = 20.dp)) { header() } }
-                itemsIndexed(shown, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(shown, i) }) }
+                itemsIndexed(shownTracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(shownTracks, i) }) }
             }
         } else {
             val shown = remember(albums, fq) { albums.filterBy(fq) { it.searchKey } }
@@ -305,11 +352,13 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String, query: MutableState<String>
     var q by query
     val fq = remember(q) { Query(q) }
     val subs = remember(f, fq) { f.folders.values.toList().filterBy(fq) { searchFold(it.name) } }
-    val tracks = remember(f, fq) { f.tracks.filterBy(fq) { it.searchKey } }
+    val order = rememberTrackListOrder()
+    val tracks = remember(f, fq, order.sort, order.reversed, ui.version) { order.apply(ui, f.tracks).filterBy(fq) { it.searchKey } }
+    val all = remember(f, order.sort, order.reversed, ui.version) { order.apply(ui, f.allTracks) }
     Column {
         FilterField(ui, q) { q = it }
         LazyColumn(contentPadding = listPadding()) {
-            if (path.isNotEmpty()) item { PlayButtons(ui, "folder:$path", f.name, f.allTracks, count = true) }
+            if (path.isNotEmpty()) item { PlayButtons(ui, "folder:$path", f.name, all, count = true, order = order) }
             items(subs, key = { "f" + it.path }) { s ->
                 ListRow(Icons.Default.Folder, s.name, "${s.allTracks.size} tracks") { ui.open(Screen.FolderView(s.path)) }
             }
@@ -371,17 +420,20 @@ fun SearchTab(ui: Ui, cat: Catalog) {
 /**
  * Download, add to playlist and a menu on the left, shuffle and a large play button on the right.
  * [count] shows the number of tracks; [menu] adds rows to the menu after "Play next" and "Add to queue".
+ * With [order] the menu also picks how the screen sorts its tracks, offering the orders that change something in [tracks].
  */
 @UnstableApi
 @Composable
 fun PlayButtons(
-    ui: Ui, key: String, title: String, tracks: List<Track>, count: Boolean = false,
+    ui: Ui, key: String, title: String, tracks: List<Track>, count: Boolean = false, order: TrackListOrder? = null,
     menu: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
 ) {
     val dl = downloadProgress(ui, tracks)
     val allDownloaded = remember(tracks, ui.version, dl == null) { tracks.isNotEmpty() && tracks.all { ui.library.isDownloaded(it) } }
     var open by remember { mutableStateOf(false) }
-    val close = { open = false }
+    var sorting by remember { mutableStateOf(false) }
+    val close = { open = false; sorting = false }
+    val sorts = remember(tracks, ui.version, order == null) { if (order == null) emptyList() else sortsFor(ui, tracks) }
     // A whole album or playlist is a lot of data: downloading and removing it are confirmed with its size.
     var confirm by remember { mutableStateOf(false) }
     if (confirm) {
@@ -410,9 +462,17 @@ fun PlayButtons(
         Box {
             SmallIcon(Icons.Default.MoreHoriz, Color(0xFFC9C9C9), 24.dp) { open = true }
             DropdownMenu(open, close, containerColor = Gray2) {
-                DropdownMenuItem({ Text("Play next") }, { close(); ui.playNext(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) })
-                DropdownMenuItem({ Text("Add to queue") }, { close(); ui.addToEnd(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) })
-                menu?.invoke(this, close)
+                if (sorting && order != null) sorts.forEach { s ->
+                    DropdownMenuItem({ Text(s.title) }, { close(); order.pick(s) }, trailingIcon = {
+                        if (s == order.sort) Icon(if (order.reversed) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null, Modifier.size(18.dp))
+                    })
+                } else {
+                    DropdownMenuItem({ Text("Play next") }, { close(); ui.playNext(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) })
+                    DropdownMenuItem({ Text("Add to queue") }, { close(); ui.addToEnd(tracks) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) })
+                    if (order != null && sorts.size > 1) DropdownMenuItem({ Text("Sort: ${order.sort.title}") }, { sorting = true },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) })
+                    menu?.invoke(this, close)
+                }
             }
         }
         if (count) Text(if (tracks.size == 1) "1 track" else "${tracks.size} tracks", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
@@ -428,6 +488,8 @@ fun PlayButtons(
 @UnstableApi
 @Composable
 fun AlbumScreen(ui: Ui, a: Album) {
+    val order = rememberTrackListOrder()
+    val tracks = remember(a, order.sort, order.reversed, ui.version) { order.apply(ui, a.tracks) }
     LazyColumn(contentPadding = listPadding()) {
         item {
             Column {
@@ -446,13 +508,13 @@ fun AlbumScreen(ui: Ui, a: Album) {
                     )
                     RatingPicker(ui.rating(a)) { ui.setRating(a, it) }
                 }
-                Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, a.tracks, menu = { close ->
+                Box(Modifier.padding(horizontal = 12.dp)) { PlayButtons(ui, a.id, a.title, tracks, order = order, menu = { close ->
                     DropdownMenuItem({ Text("Delete from bucket") }, { close(); ui.deleting = Ui.DeleteRequest(a.title, a.tracks, true) },
                         leadingIcon = { Icon(Icons.Default.DeleteForever, null) })
                 }) }
             }
         }
-        itemsIndexed(a.tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(a.tracks, i) }) }
+        itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = false, onClick = { ui.play(tracks, i) }) }
     }
 }
 
@@ -564,8 +626,11 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
     val fq = remember(q) { Query(q) }
     // Rows keep their playlist index so remove works on the filtered list; dragging is off while filtering.
     val likeFilter = ui.libraryFilter
-    val shown = remember(tracks, fq, likeFilter, ui.version) { tracks.indices.filter { ui.shows(tracks[it]) }.filterBy(fq) { tracks[it].searchKey } }
-    val drag = fq.isEmpty() && likeFilter == LikeFilter.All
+    val order = rememberTrackListOrder()
+    val shown = remember(tracks, fq, likeFilter, ui.version, order.sort, order.reversed) {
+        order.apply(ui, tracks.indices.filter { ui.shows(tracks[it]) }) { tracks[it] }.filterBy(fq) { tracks[it].searchKey }
+    }
+    val drag = fq.isEmpty() && likeFilter == LikeFilter.All && order.isOwn
     // The header counts what the like filter shows.
     val counted = remember(tracks, likeFilter, ui.version) { tracks.filter { ui.shows(it) } }
     val shownTracks = remember(shown) { shown.map { tracks[it] } }
@@ -577,7 +642,7 @@ fun PlaylistScreen(ui: Ui, cat: Catalog, id: String) {
                 Column {
                     ScreenTitle(p.name, "${counted.size} tracks · ${formatTime(counted.sumOf { it.duration })}")
                     Box(Modifier.padding(horizontal = 12.dp)) {
-                        PlayButtons(ui, "playlist:$id", p.name, shownTracks, menu = { close ->
+                        PlayButtons(ui, "playlist:$id", p.name, shownTracks, order = order, menu = { close ->
                             DropdownMenuItem({ Text("Rename") }, { close(); renaming = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                             DropdownMenuItem({ Text("Delete") }, { close(); confirmDelete = true }, leadingIcon = { Icon(Icons.Default.Delete, null) })
                         })
@@ -630,12 +695,11 @@ fun DragHandle(modifier: Modifier) =
 @UnstableApi
 @Composable
 fun LikedScreen(ui: Ui, cat: Catalog) {
-    var byRecent by remember { mutableStateOf(false) }
+    val order = rememberTrackListOrder()
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
-    val liked = remember(cat, ui.version, byRecent, fq) {
-        val l = cat.tracks.filter { ui.library.isLiked(it) }.filterBy(fq) { it.searchKey }
-        if (byRecent) l.sortedWith(compareByDescending<Track> { ui.likeOrder(it) }.thenByDescending { it.album.added }) else l
+    val liked = remember(cat, ui.version, order.sort, order.reversed, fq) {
+        order.apply(ui, cat.tracks.filter { ui.library.isLiked(it) }).filterBy(fq) { it.searchKey }
     }
     Column {
         FilterField(ui, q) { q = it }
@@ -643,10 +707,7 @@ fun LikedScreen(ui: Ui, cat: Catalog) {
             item {
                 ScreenTitle("Liked", "${liked.size} tracks")
                 Box(Modifier.padding(horizontal = 12.dp)) {
-                    PlayButtons(ui, "liked", "Liked", liked, menu = { close ->
-                        DropdownMenuItem({ Text(if (byRecent) "Sort A–Z" else "Recently liked first") }, { close(); byRecent = !byRecent },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) })
-                    })
+                    PlayButtons(ui, "liked", "Liked", liked, order = order)
                 }
             }
             itemsIndexed(liked, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(liked, i) }) }
