@@ -49,7 +49,8 @@ import kotlinx.coroutines.launch
 
 sealed interface ChatEntry {
     data class User(val text: String) : ChatEntry
-    data class Reply(val text: String, val error: Boolean = false) : ChatEntry
+    /** [cat] is the catalog the reply's handles point into. */
+    data class Reply(val text: String, val error: Boolean = false, val cat: Catalog? = null) : ChatEntry
     /** How long the assistant took to answer, without the time spent waiting for Apply or Cancel. */
     data class Took(val ms: Long) : ChatEntry
     /** A change waiting for one of its actions or Cancel. */
@@ -75,6 +76,7 @@ class Assistant(private val ui: Ui) {
     val queued = mutableStateListOf<String>()
 
     private var confirmWait = 0L
+    private var cat: Catalog? = null
     private var job: Job? = null
     private var keptAlive = false
 
@@ -82,6 +84,8 @@ class Assistant(private val ui: Ui) {
         override val intro = """
             You are the assistant inside B2 Player, the user's personal music player on Android. The chat is small: keep replies
             short. Simple Markdown is shown: **bold**, *italic*, `code`, lists, headings and links. The queue has its own liked filter.
+            Make albums, tracks and artists from the library that you name tappable with links: [title](a12) or [title](t345)
+            with the handle, [name](artist) with the artist's name as in the library. Don't put links inside bold.
         """.trimIndent()
         override val currentId get() = ui.currentId
         override val playing get() = ui.playing
@@ -99,7 +103,7 @@ class Assistant(private val ui: Ui) {
         override fun history() = ui.app.history.all()
         override fun rating(a: Album) = ui.app.ratings.get(a.id)
         override fun setRating(a: Album, rating: Int) = ui.setRating(a, rating)
-        override fun reply(text: String, error: Boolean) { entries.add(ChatEntry.Reply(text, error)) }
+        override fun reply(text: String, error: Boolean) { entries.add(ChatEntry.Reply(text, error, cat)) }
         override suspend fun confirm(change: AssistantTools.Change): AssistantTools.Action? {
             val confirm = ChatEntry.Confirm(change)
             entries.add(confirm)
@@ -132,6 +136,7 @@ class Assistant(private val ui: Ui) {
         busy = true
         val started = SystemClock.elapsedRealtime()
         confirmWait = 0L
+        this.cat = cat
         chat.apiKey = apiKey
         job = ui.scope.launch {
             try {
@@ -183,7 +188,7 @@ fun AssistantScreen(ui: Ui) {
                     Text("What should we play?", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
                 }
             }
-            items(a.entries) { e -> ChatBubble(e) }
+            items(a.entries) { e -> ChatBubble(ui, e) }
             item { if (a.busy) Text("…", color = Muted) }
             items(a.queued) { Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) { Text(it, Modifier.clip(RoundedCornerShape(12.dp)).background(Gray1).padding(10.dp, 6.dp), color = Muted) } }
         }
@@ -219,14 +224,14 @@ fun AssistantScreen(ui: Ui) {
 }
 
 @Composable
-private fun ChatBubble(e: ChatEntry) {
+private fun ChatBubble(ui: Ui, e: ChatEntry) {
     when (e) {
         is ChatEntry.User -> Box(Modifier.fillMaxWidth(), Alignment.CenterEnd) {
             SelectionContainer { Text(e.text, Modifier.clip(RoundedCornerShape(18.dp)).background(Gray2).padding(14.dp, 9.dp)) }
         }
         is ChatEntry.Reply -> SelectionContainer {
             if (e.error) Text(e.text, color = MaterialTheme.colorScheme.error)
-            else Text(remember(e.text) { markdown(e.text) })
+            else Text(remember(e) { markdown(e.text) { label, url -> e.cat?.let { itemScreen(it, label, url) }?.let { { ui.open(it) } } } })
         }
         is ChatEntry.Took -> Text(if (e.ms < 1000) "${e.ms} ms" else "${e.ms / 100 / 10.0} s",
             style = MaterialTheme.typography.labelSmall, color = Muted)
@@ -251,9 +256,25 @@ private fun ChatBubble(e: ChatEntry) {
 private val inlineMarkdown = Regex("""\*\*(.+?)\*\*|\*(\S(?:.*?\S)?)\*|`([^`]+)`|\[([^\]]+)]\(([^)\s]+)\)""")
 private val bullet = Regex("""^(\s*)[-*+]\s+""")
 private val heading = Regex("""^#{1,6}\s+""")
+private val linkStyle = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
 
-/** The Markdown a chat reply needs: headings, bullets, **bold**, *italic*, `code` and [links](url). */
-private fun markdown(text: String): AnnotatedString = buildAnnotatedString {
+/** The screen a link to a library item opens: an album or track handle, or "artist" with the artist's name as the label. */
+private fun itemScreen(cat: Catalog, label: String, url: String): Screen? {
+    val n = url.drop(1).toIntOrNull()
+    return when {
+        url == "artist" -> cat.artists.firstOrNull { it.first.equals(label, ignoreCase = true) }?.let { Screen.ArtistView(it.first) }
+        n == null -> null
+        url[0] == 'a' -> cat.albums.getOrNull(n)?.let { Screen.AlbumView(it) }
+        url[0] == 't' -> cat.tracks.getOrNull(n)?.let { Screen.AlbumView(it.album) }
+        else -> null
+    }
+}
+
+/**
+ * The Markdown a chat reply needs: headings, bullets, **bold**, *italic*, `code` and [links](url). [onItem] gives the
+ * action for a link to a library item; other links open in the browser if they are web links, else show as plain text.
+ */
+private fun markdown(text: String, onItem: (label: String, url: String) -> (() -> Unit)?): AnnotatedString = buildAnnotatedString {
     text.lines().forEachIndexed { i, raw ->
         if (i > 0) append('\n')
         val h = heading.find(raw)
@@ -267,7 +288,14 @@ private fun markdown(text: String): AnnotatedString = buildAnnotatedString {
                 bold.isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(bold) }
                 italic.isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(italic) }
                 code.isNotEmpty() -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x33888888))) { append(code) }
-                else -> withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)))) { append(label) }
+                else -> {
+                    val item = onItem(label, url)
+                    when {
+                        item != null -> withLink(LinkAnnotation.Clickable(url, linkStyle) { item() }) { append(label) }
+                        url.startsWith("http") -> withLink(LinkAnnotation.Url(url, linkStyle)) { append(label) }
+                        else -> append(label)
+                    }
+                }
             }
             pos = m.range.last + 1
         }
