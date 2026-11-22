@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +61,10 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.geometry.Offset
 import androidx.work.WorkManager
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
@@ -218,6 +223,16 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     // Leaving a screen closes its search field and the keyboard, which would otherwise stay over the next screen.
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { ui.filterOpen = false; focusManager.clearFocus(); keyboard?.hide() }
+    // Scrolling a list closes the keyboard too, so the results under it can be seen; the typed text stays.
+    val ime by rememberUpdatedState(imeVisible)
+    val hideKeyboardOnScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (ime && source == NestedScrollSource.UserInput) { focusManager.clearFocus(); keyboard?.hide() }
+                return Offset.Zero
+            }
+        }
+    }
 
     val coverKey = ui.currentId?.let { cat?.byId?.get(it) }?.album?.cover
     LaunchedEffect(coverKey, ui.prefs.coverTint.value) {
@@ -357,7 +372,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         ) { pad ->
             // The list runs under the panel at the bottom and pads its end instead.
             CompositionLocalProvider(LocalListBottom provides pad.calculateBottomPadding()) {
-                Column(Modifier.fillMaxSize().hazeSource(haze).padding(top = pad.calculateTopPadding())) {
+                // Not in the assistant's chat, where the keyboard stays while reading back.
+                Column(Modifier.fillMaxSize().hazeSource(haze).padding(top = pad.calculateTopPadding())
+                    .then(if (screen == Screen.Assistant) Modifier else Modifier.nestedScroll(hideKeyboardOnScroll))) {
                     ui.status?.let {
                         val progress = it == Ui.UPDATING
                         Text(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = if (progress) Muted else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -385,6 +402,8 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             screen == Screen.HistoryView -> HistoryScreen(ui, full)
                             else -> when (ui.tab) {
                                 Tab.Library -> Column {
+                                    // One search text for all the sections, so switching from Albums to Tracks keeps it.
+                                    val query = rememberSaveable { mutableStateOf("") }
                                     Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                         val chips = rememberScrollState()
                                         Row(
@@ -410,11 +429,11 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                         ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
                                     }
                                     when (ui.section) {
-                                        LibrarySection.Albums -> AlbumsTab(ui, c)
-                                        LibrarySection.Tracks -> TracksTab(ui, c)
-                                        LibrarySection.Artists -> ArtistsTab(ui, c)
-                                        LibrarySection.Genres -> GenresTab(ui, c)
-                                        LibrarySection.Folders -> FolderScreen(ui, c, "")
+                                        LibrarySection.Albums -> AlbumsTab(ui, c, query)
+                                        LibrarySection.Tracks -> TracksTab(ui, c, query)
+                                        LibrarySection.Artists -> ArtistsTab(ui, c, query)
+                                        LibrarySection.Genres -> GenresTab(ui, c, query)
+                                        LibrarySection.Folders -> FolderScreen(ui, c, "", query)
                                     }
                                 }
                                 Tab.Playlists -> PlaylistsTab(ui, full)

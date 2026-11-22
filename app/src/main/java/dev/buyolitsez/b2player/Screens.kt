@@ -61,12 +61,12 @@ fun <T> rememberInBackground(vararg keys: Any?, compute: () -> T): T {
 
 @UnstableApi
 @Composable
-fun AlbumsTab(ui: Ui, cat: Catalog) {
+fun AlbumsTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
     val sort = AlbumSort.entries.firstOrNull { it.name == ui.prefs.albumSort.value } ?: AlbumSort.Artist
     val days = ui.prefs.recentDays
     val minRating = ui.prefs.minRating
     var ratingMenu by remember { mutableStateOf(false) }
-    var q by rememberSaveable { mutableStateOf("") }
+    var q by query
     val fq = remember(q) { Query(q) }
     val albums = rememberInBackground(cat, sort, days.value, minRating.value, fq, ui.version) { sortAlbums(ui, cat.albums.filterBy(fq) { it.searchKey }) }
     fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
@@ -177,9 +177,9 @@ fun SortButton(title: String, options: List<String>, onPick: (Int) -> Unit) = Bo
 
 @UnstableApi
 @Composable
-fun TracksTab(ui: Ui, cat: Catalog) {
+fun TracksTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
     val sort = TrackSort.entries.firstOrNull { it.name == ui.prefs.trackSort.value } ?: TrackSort.Artist
-    var q by rememberSaveable { mutableStateOf("") }
+    var q by query
     val fq = remember(q) { Query(q) }
     val days = ui.prefs.recentDays.value
     val tracks = rememberInBackground(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
@@ -212,8 +212,8 @@ fun TracksTab(ui: Ui, cat: Catalog) {
 
 @UnstableApi
 @Composable
-fun ArtistsTab(ui: Ui, cat: Catalog) {
-    var q by rememberSaveable { mutableStateOf("") }
+fun ArtistsTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
+    var q by query
     val fq = remember(q) { Query(q) }
     val artists = remember(cat, fq) { cat.artists.filterBy(fq) { searchFold(it.first) } }
     Column {
@@ -252,8 +252,8 @@ const val NO_GENRE = "No genre"
 
 @UnstableApi
 @Composable
-fun GenresTab(ui: Ui, cat: Catalog) {
-    var q by rememberSaveable { mutableStateOf("") }
+fun GenresTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
+    var q by query
     val fq = remember(q) { Query(q) }
     // Larger genres first among equal matches, so a typo like "rokc" still shows Rock and not only Acoustic Rock.
     val genres = remember(cat, fq) { cat.genres.filterBy(fq) { searchFold(it.first.ifEmpty { NO_GENRE }) } }
@@ -283,9 +283,9 @@ fun GenreScreen(ui: Ui, cat: Catalog, name: String) {
 
 @UnstableApi
 @Composable
-fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
+fun FolderScreen(ui: Ui, cat: Catalog, path: String, query: MutableState<String> = rememberSaveable { mutableStateOf("") }) {
     val f = remember(cat, path) { cat.folder(path) } ?: return
-    var q by rememberSaveable { mutableStateOf("") }
+    var q by query
     val fq = remember(q) { Query(q) }
     val subs = remember(f, fq) { f.folders.values.toList().filterBy(fq) { searchFold(it.name) } }
     val tracks = remember(f, fq) { f.tracks.filterBy(fq) { it.searchKey } }
