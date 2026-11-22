@@ -202,7 +202,7 @@ fun formatHistory(list: List<Play>) = list.joinToString("") { "${it.time}\t${it.
 
 /** Both lists in time order, each play once; a play known with its device and without it keeps the device. */
 fun mergeHistory(a: List<Play>, b: List<Play>) =
-    (a + b).sortedWith(compareBy<Play>({ it.time }, { it.trackId }, { it.device.isEmpty() })).distinctBy { it.time to it.trackId }
+    (a + b).sortedWith(compareBy<Play>({ it.time }, { it.device.isEmpty() })).distinctBy { it.time to it.trackId }
 
 fun formatTime(sec: Double): String {
     val s = sec.toLong()
