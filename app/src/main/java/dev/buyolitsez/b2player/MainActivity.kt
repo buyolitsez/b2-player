@@ -307,7 +307,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                 }
                             }
                         }
-                        if (screen is Screen.ArtistView || screen is Screen.GenreView) {
+                        if (screen is Screen.ArtistView && !ui.prefs.artistTracks.value || screen is Screen.GenreView) {
                             IconButton({ ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value) }) {
                                 Icon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, null)
                             }
