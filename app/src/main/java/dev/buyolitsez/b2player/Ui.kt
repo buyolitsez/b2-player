@@ -133,13 +133,27 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         val c = controller ?: return
         if (queueFilter == LikeFilter.All) return
         val byId = app.catalog.value?.byId ?: return
-        var removed = false
-        for (i in c.mediaItemCount - 1 downTo 0) {
-            val t = byId[c.getMediaItemAt(i).mediaId] ?: continue
-            if (i != c.currentMediaItemIndex && !passes(t)) { c.removeMediaItem(i); removed = true }
+        val gone = (0 until c.mediaItemCount).filter { i ->
+            i != c.currentMediaItemIndex && byId[c.getMediaItemAt(i).mediaId]?.let { !passes(it) } == true
         }
+        if (gone.isEmpty()) return
+        removeFromPlayer(gone)
         // A queue row's menu keeps its index, which now may point at another track.
-        if (removed && trackMenu?.queueIndex != null) trackMenu = null
+        if (trackMenu?.queueIndex != null) trackMenu = null
+    }
+
+    /**
+     * After a removal with shuffle on, the controller shows the rest of the queue in queue order until the player's
+     * order arrives, about 100 ms later. The rows would jump there and back, and the queue list kept blank rows.
+     */
+    private fun removeFromPlayer(gone: List<Int>) {
+        val c = controller ?: return
+        if (shuffle && playOrder.size == queueIds.size) {
+            val kept = queueIds.indices - gone.toSet()
+            val newIndex = kept.withIndex().associate { (j, i) -> i to j }
+            movedOrder = kept.map { queueIds[it] } to playOrder.mapNotNull { newIndex[it] }
+        }
+        gone.sortedDescending().forEach { c.removeMediaItem(it) }
     }
 
     /**
@@ -452,7 +466,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
 
     fun removeFromQueue(index: Int) {
         queueIds.getOrNull(index)?.let { id -> library.queueSource = source().toMutableList().apply { remove(id) } }
-        controller?.removeMediaItem(index)
+        removeFromPlayer(listOf(index))
     }
     fun clearQueue() {
         val before = snapshot() ?: return
