@@ -318,7 +318,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LikeFilter.entries.forEach { f -> Pill(f.title, active = f == ui.queueFilter) { ui.setQueueFilter(f) } }
             }
-            if (filter || q.isNotEmpty()) SearchBox(q, { q = it }, "Search")
+            if (filter || q.isNotEmpty()) SearchBox(q, { q = it }, "Search", focus = filter)
             LazyColumn(Modifier.weight(1f), state = listState) {
                 if (showSaved) {
                     item { SectionTitle("Saved queues") }

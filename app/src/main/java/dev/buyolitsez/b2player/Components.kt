@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,12 +133,18 @@ fun Pill(text: String, icon: ImageVector? = null, active: Boolean = false, progr
     }
 }
 
-/** Filled rounded search field without an outline. */
+/**
+ * Filled rounded search field without an outline. While [focus] is true it takes the focus and opens the keyboard,
+ * one frame late so that the keyboard hiding on a screen change (see MainActivity) does not close it again.
+ */
 @Composable
-fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
+fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, focus: Boolean = false) {
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(focus) { if (focus) { awaitFrame(); runCatching { requester.requestFocus() }; keyboard?.show() } }
     TextField(
-        value, onChange, modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
+        value, onChange, Modifier.focusRequester(requester).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
         placeholder = { Text(placeholder, color = Faint) }, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
         trailingIcon = { if (value.isNotEmpty()) SmallIcon(Icons.Default.Close) { onChange("") } },
         shape = RoundedCornerShape(12.dp), textStyle = MaterialTheme.typography.bodyLarge,
@@ -157,9 +165,7 @@ fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, mo
 @Composable
 fun FilterField(ui: Ui, value: String, onChange: (String) -> Unit) {
     if (!ui.filterOpen && value.isEmpty()) return
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (value.isEmpty()) runCatching { focus.requestFocus() } }
-    SearchBox(value, { if (it.isEmpty()) ui.filterOpen = true; onChange(it) }, "Search", Modifier.focusRequester(focus))
+    SearchBox(value, { if (it.isEmpty()) ui.filterOpen = true; onChange(it) }, "Search", focus = ui.filterOpen)
 }
 
 /** A small grey label in capitals above a group of rows. */
