@@ -453,7 +453,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         }
         // Now playing and the queue cover everything; the empty click keeps taps from reaching the tabs below.
         val c = cat
-        if (ui.nowOpen && c != null) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}) {
+        if (ui.nowOpen && c != null) Box(Modifier.fillMaxSize().nestedScroll(hideKeyboardOnScroll).clickable(remember { MutableInteractionSource() }, null) {}) {
             if (ui.queueOpen) QueueScreen(ui, c) else NowPlayingScreen(ui, c)
         }
         // Messages float just above the mini player, in its shape.

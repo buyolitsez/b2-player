@@ -24,8 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -372,9 +370,7 @@ fun FolderScreen(ui: Ui, cat: Catalog, path: String, query: MutableState<String>
 fun SearchTab(ui: Ui, cat: Catalog) {
     val q = ui.query.trim()
     val fq = remember(q) { Query(q) }
-    val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(Unit) { if (q.isEmpty()) runCatching { focus.requestFocus() } }
     // Filtering 18k tracks runs off the main thread; the previous results stay until the new ones are ready.
     val found by produceState(Triple(emptyList<Pair<String, List<Album>>>(), emptyList<Album>(), emptyList<Track>()), cat, fq) {
         value = if (fq.folded.length < 2) Triple(emptyList(), emptyList(), emptyList()) else withContext(Dispatchers.Default) {
@@ -389,7 +385,7 @@ fun SearchTab(ui: Ui, cat: Catalog) {
         if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
     }
     Column {
-        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", Modifier.focusRequester(focus))
+        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", focus = q.isEmpty())
         LazyColumn(contentPadding = listPadding()) {
             if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(20.dp), color = Muted) }
             else if (q.length >= 2 && genres.isEmpty() && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
