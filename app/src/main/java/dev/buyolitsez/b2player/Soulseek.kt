@@ -1,8 +1,10 @@
 package dev.buyolitsez.b2player
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -31,6 +33,8 @@ import java.net.URL
 class Soulseek(private val ui: Ui) {
     class Result(val index: Int, val name: String, val folder: String, val user: String, val kind: String, val queue: Int?, val files: List<Pair<String, Long>>) {
         val tracks get() = files.count { it.first.substringAfterLast('.').lowercase() !in COVER_EXT }
+        /** "FLAC", "MP3", or "FLAC+MP3" for a folder with both. */
+        val format get() = kind.substringBefore(' ')
     }
     class Album(val name: String, val target: String?, val note: String)
     class Plan(val id: String, val albums: List<Album>)
@@ -44,6 +48,8 @@ class Soulseek(private val ui: Ui) {
     var results by mutableStateOf<List<Result>?>(null)
         private set
     val picked = mutableStateListOf<Int>()
+    /** The format the results are filtered by, null for all; kept for the next search. */
+    var format by mutableStateOf<String?>(null)
     /** Searching, asking Claude or starting: what to show while it runs. */
     var busy by mutableStateOf<String?>(null)
         private set
@@ -167,8 +173,18 @@ fun SoulseekScreen(ui: Ui, query: String) {
                     }
                 }
             }
-            val results = s.results
-            if (results != null) {
+            val all = s.results
+            if (all != null) {
+                // Single formats, the most common first; a folder with several formats shows only under All
+                val formats = all.groupingBy { it.format }.eachCount().filterKeys { '+' !in it }.entries.sortedByDescending { it.value }
+                val results = s.format?.let { f -> all.filter { it.format == f } } ?: all
+                if (formats.size > 1 || s.format != null) item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("All", active = s.format == null) { s.format = null }
+                        formats.forEach { (f, n) -> Pill("$f $n", active = s.format == f) { s.format = f } }
+                        if (s.format != null && formats.none { it.key == s.format }) Pill("${s.format} 0", active = true) {}
+                    }
+                }
                 item { SectionTitle(if (results.isEmpty()) "Nothing found" else "Found · tap to pick") }
                 items(results, key = { it.index }) { r ->
                     val picked = r.index in s.picked
