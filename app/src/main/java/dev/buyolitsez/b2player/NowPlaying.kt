@@ -279,7 +279,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
     val saved = remember(ui.version) { ui.library.savedQueues }
     val left = order.drop(at).sumOf { tracks.getOrNull(it)?.duration ?: 0.0 }
     var showSaved by remember { mutableStateOf(false) }
-    var filter by remember { mutableStateOf(false) }
+    var searchTaps by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
@@ -298,7 +298,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 SmallIcon(Icons.Default.KeyboardArrowDown, Color.White, 30.dp) { ui.queueOpen = false }
                 Spacer(Modifier.weight(1f))
-                SmallIcon(Icons.Default.Search, Color.White, 22.dp) { filter = !filter }
+                SmallIcon(Icons.Default.Search, Color.White, 22.dp) { searchTaps++ }
                 Box {
                     SmallIcon(Icons.Default.MoreVert, Color.White, 22.dp) { menu = true }
                     DropdownMenu(menu, { menu = false }, containerColor = Gray2) {
@@ -318,7 +318,7 @@ fun QueueScreen(ui: Ui, cat: Catalog) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LikeFilter.entries.forEach { f -> Pill(f.title, active = f == ui.queueFilter) { ui.setQueueFilter(f) } }
             }
-            if (filter || q.isNotEmpty()) SearchBox(q, { q = it }, "Search", focus = filter)
+            FilterField(searchTaps, { searchTaps = it }, q) { q = it }
             LazyColumn(Modifier.weight(1f), state = listState) {
                 if (showSaved) {
                     item { SectionTitle("Saved queues") }

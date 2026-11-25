@@ -228,8 +228,12 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
         if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
     // Leaving a screen closes its search field and the keyboard, which would otherwise stay over the next screen.
+    // Only a tap on the Search tab leads to it with the keyboard open, not coming back to it.
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { ui.filterOpen = false; focusManager.clearFocus(); keyboard?.hide() }
+    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) {
+        if (screen != Screen.Root || ui.tab != Tab.Search) ui.searchTaps = 0
+        focusManager.clearFocus(); keyboard?.hide()
+    }
     // Scrolling a list closes the keyboard too, so the results under it can be seen; the typed text stays.
     val ime by rememberUpdatedState(imeVisible)
     val hideKeyboardOnScroll = remember {
@@ -296,7 +300,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     },
                     navigationIcon = { if (stack.size > 1) IconButton({ ui.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                     actions = {
-                        if (hasFilter) IconButton({ ui.filterOpen = !ui.filterOpen }) { Icon(Icons.Default.Search, "Search in this list") }
+                        if (hasFilter) IconButton({ ui.searchTaps++ }) { Icon(Icons.Default.Search, "Search in this list") }
                         // Tap: liked tracks only or everything; long press: tracks that aren't liked.
                         if (likeFiltered) {
                             val f = ui.libraryFilter

@@ -83,8 +83,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     /** Now playing, and the queue on top of it, cover the tabs. */
     var nowOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
-    /** The search field above a list is shown; it closes when the screen changes. */
-    var filterOpen by mutableStateOf(false)
+    /**
+     * Taps on a search button since the screen opened, 0 if none: the search field shows from the first tap,
+     * and each tap focuses it and opens the keyboard. Tapping the Search tab counts too.
+     */
+    var searchTaps by mutableIntStateOf(0)
     val stacks = mutableStateMapOf<Tab, List<Screen>>()
     var status by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
@@ -216,6 +219,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     }
     fun selectTab(t: Tab) {
         returnTo = null; selection = emptyList()
+        if (t == Tab.Search) searchTaps++
         if (t == tab && stack().size > 1) stacks[t] = listOf(Screen.Root) else tab = t
     }
 

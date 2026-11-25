@@ -385,7 +385,7 @@ fun SearchTab(ui: Ui, cat: Catalog) {
         if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
     }
     Column {
-        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", focus = q.isEmpty())
+        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", focus = ui.searchTaps)
         LazyColumn(contentPadding = listPadding()) {
             if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(20.dp), color = Muted) }
             else if (q.length >= 2 && genres.isEmpty() && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
