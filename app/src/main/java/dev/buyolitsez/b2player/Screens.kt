@@ -60,43 +60,38 @@ fun <T> rememberInBackground(vararg keys: Any?, compute: () -> T): T {
 
 @UnstableApi
 @Composable
-fun AlbumsTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
+fun AlbumsTab(ui: Ui, cat: Catalog) {
     val sort = AlbumSort.entries.firstOrNull { it.name == ui.prefs.albumSort.value } ?: AlbumSort.Artist
     val days = ui.prefs.recentDays
     val minRating = ui.prefs.minRating
     var ratingMenu by remember { mutableStateOf(false) }
-    var q by query
-    val fq = remember(q) { Query(q) }
-    val albums = rememberInBackground(cat, sort, days.value, minRating.value, fq, ui.version) { sortAlbums(ui, cat.albums.filterBy(fq) { it.searchKey }) }
+    val albums = rememberInBackground(cat, sort, days.value, minRating.value, ui.version) { sortAlbums(ui, cat.albums) }
     fun ratingLabel(r: Int) = when (r) { 0 -> "All"; -1 -> "Unrated"; 10 -> "10"; else -> "$r and up" }
-    Column {
-        FilterField(ui, q) { q = it }
-        AlbumGrid(ui, albums, header = {
-            // Sort order, the period of "Recently added" or "Recently liked", grid or list.
-            Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                SortButton(sort.title, AlbumSort.entries.map { it.title }) { ui.prefs.albumSort.set(AlbumSort.entries[it].name) }
-                Spacer(Modifier.weight(1f))
-                if (sort == AlbumSort.Rating) Box {
-                    Text(ratingLabel(minRating.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { ratingMenu = true }.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall, color = Muted)
-                    DropdownMenu(ratingMenu, { ratingMenu = false }, containerColor = Gray2) {
-                        listOf(0, 10, 9, 8, 7, 6, 5, -1).forEach { r -> DropdownMenuItem({ Text(ratingLabel(r)) }, { ratingMenu = false; minRating.set(r) }) }
-                    }
-                }
-                if (sort == AlbumSort.Recent || sort == AlbumSort.Liked) PeriodButton(ui)
-                SmallIcon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, size = 18.dp) {
-                    ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value)
+    AlbumGrid(ui, albums, header = {
+        // Sort order, the period of "Recently added" or "Recently liked", grid or list.
+        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            SortButton(sort.title, AlbumSort.entries.map { it.title }) { ui.prefs.albumSort.set(AlbumSort.entries[it].name) }
+            Spacer(Modifier.weight(1f))
+            if (sort == AlbumSort.Rating) Box {
+                Text(ratingLabel(minRating.value), Modifier.clip(RoundedCornerShape(8.dp)).clickable { ratingMenu = true }.padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall, color = Muted)
+                DropdownMenu(ratingMenu, { ratingMenu = false }, containerColor = Gray2) {
+                    listOf(0, 10, 9, 8, 7, 6, 5, -1).forEach { r -> DropdownMenuItem({ Text(ratingLabel(r)) }, { ratingMenu = false; minRating.set(r) }) }
                 }
             }
-        }, label = { a ->
-            when (sort) {
-                AlbumSort.Artist -> initial(a.artist)
-                AlbumSort.Recent -> monthLabel(a.added * 1000)
-                AlbumSort.Rating -> ui.rating(a)?.let { formatRating(it) }
-                AlbumSort.Liked -> null
+            if (sort == AlbumSort.Recent || sort == AlbumSort.Liked) PeriodButton(ui)
+            SmallIcon(if (ui.prefs.albumGrid.value) Icons.Default.ViewList else Icons.Default.GridView, size = 18.dp) {
+                ui.prefs.albumGrid.set(!ui.prefs.albumGrid.value)
             }
-        })
-    }
+        }
+    }, label = { a ->
+        when (sort) {
+            AlbumSort.Artist -> initial(a.artist)
+            AlbumSort.Recent -> monthLabel(a.added * 1000)
+            AlbumSort.Rating -> ui.rating(a)?.let { formatRating(it) }
+            AlbumSort.Liked -> null
+        }
+    })
 }
 
 /** "Nov 2026": where the fast scroller is in a list newest first. */
@@ -219,58 +214,46 @@ fun SortButton(title: String, options: List<String>, onPick: (Int) -> Unit) = Bo
 
 @UnstableApi
 @Composable
-fun TracksTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
+fun TracksTab(ui: Ui, cat: Catalog) {
     val sort = TrackSort.entries.firstOrNull { it.name == ui.prefs.trackSort.value } ?: TrackSort.Artist
-    var q by query
-    val fq = remember(q) { Query(q) }
     val days = ui.prefs.recentDays.value
-    val tracks = rememberInBackground(cat, sort, days, fq, ui.version) { sortTracks(ui, cat.tracks.filterBy(fq) { it.searchKey }) }
+    val tracks = rememberInBackground(cat, sort, days, ui.version) { sortTracks(ui, cat.tracks) }
     val state = rememberLazyListState()
-    Column {
-        FilterField(ui, q) { q = it }
-        Box {
-            LazyColumn(state = state, contentPadding = listPadding()) {
-                item {
-                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
-                        Spacer(Modifier.weight(1f))
-                        Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
-                        if (sort != TrackSort.Artist) PeriodButton(ui)
-                    }
+    Box {
+        LazyColumn(state = state, contentPadding = listPadding()) {
+            item {
+                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SortButton(sort.title, TrackSort.entries.map { it.title }) { ui.prefs.trackSort.set(TrackSort.entries[it].name) }
+                    Spacer(Modifier.weight(1f))
+                    Text("${tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    if (sort != TrackSort.Artist) PeriodButton(ui)
                 }
-                if (tracks.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
-                itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
             }
-            FastScroller(tracks.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { i ->
-                when (sort) {
-                    TrackSort.Artist -> initial(tracks[i].album.artist)
-                    TrackSort.Recent -> monthLabel(tracks[i].album.added * 1000)
-                    TrackSort.Liked, TrackSort.Length -> null
-                    TrackSort.Title -> initial(tracks[i].title)
-                    TrackSort.Album -> initial(tracks[i].album.title)
-                    TrackSort.Year -> tracks[i].album.year?.toString()
-                }
-            }, offset = 1)
+            itemsIndexed(tracks, key = { _, t -> t.id }) { i, t -> TrackRow(ui, t, showCover = true, onClick = { ui.play(tracks, i) }) }
         }
+        FastScroller(tracks.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { i ->
+            when (sort) {
+                TrackSort.Artist -> initial(tracks[i].album.artist)
+                TrackSort.Recent -> monthLabel(tracks[i].album.added * 1000)
+                TrackSort.Liked, TrackSort.Length -> null
+                TrackSort.Title -> initial(tracks[i].title)
+                TrackSort.Album -> initial(tracks[i].album.title)
+                TrackSort.Year -> tracks[i].album.year?.toString()
+            }
+        }, offset = 1)
     }
 }
 
 @UnstableApi
 @Composable
-fun ArtistsTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
-    var q by query
-    val fq = remember(q) { Query(q) }
-    val artists = remember(cat, fq) { cat.artists.filterBy(fq) { searchFold(it.first) } }
-    Column {
-        FilterField(ui, q) { q = it }
-        val state = rememberLazyListState()
-        Box {
-            LazyColumn(state = state, contentPadding = listPadding()) {
-                if (artists.isEmpty() && q.isNotEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
-                items(artists, key = { it.first }) { (name, albums) -> ArtistRow(ui, name, albums) }
-            }
-            FastScroller(artists.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { initial(artists[it].first) })
+fun ArtistsTab(ui: Ui, cat: Catalog) {
+    val artists = cat.artists
+    val state = rememberLazyListState()
+    Box {
+        LazyColumn(state = state, contentPadding = listPadding()) {
+            items(artists, key = { it.first }) { (name, albums) -> ArtistRow(ui, name, albums) }
         }
+        FastScroller(artists.size, { state.firstVisibleItemIndex }, { state.scrollToItem(it) }, { initial(artists[it].first) })
     }
 }
 
@@ -314,17 +297,10 @@ const val NO_GENRE = "No genre"
 
 @UnstableApi
 @Composable
-fun GenresTab(ui: Ui, cat: Catalog, query: MutableState<String>) {
-    var q by query
-    val fq = remember(q) { Query(q) }
-    // Larger genres first among equal matches, so a typo like "rokc" still shows Rock and not only Acoustic Rock.
-    val genres = remember(cat, fq) { cat.genres.filterBy(fq) { searchFold(it.first.ifEmpty { NO_GENRE }) } }
-    Column {
-        FilterField(ui, q) { q = it }
-        LazyColumn(contentPadding = listPadding()) {
-            items(genres, key = { it.first }) { (name, albums) ->
-                ListRow(Icons.Default.Category, name.ifEmpty { NO_GENRE }, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name)) }
-            }
+fun GenresTab(ui: Ui, cat: Catalog) {
+    LazyColumn(contentPadding = listPadding()) {
+        items(cat.genres, key = { it.first }) { (name, albums) ->
+            ListRow(Icons.Default.Category, name.ifEmpty { NO_GENRE }, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name)) }
         }
     }
 }
@@ -345,9 +321,9 @@ fun GenreScreen(ui: Ui, cat: Catalog, name: String) {
 
 @UnstableApi
 @Composable
-fun FolderScreen(ui: Ui, cat: Catalog, path: String, query: MutableState<String> = rememberSaveable { mutableStateOf("") }) {
+fun FolderScreen(ui: Ui, cat: Catalog, path: String) {
     val f = remember(cat, path) { cat.folder(path) } ?: return
-    var q by query
+    var q by rememberSaveable { mutableStateOf("") }
     val fq = remember(q) { Query(q) }
     val subs = remember(f, fq) { f.folders.values.toList().filterBy(fq) { searchFold(it.name) } }
     val order = rememberTrackListOrder()
@@ -380,21 +356,26 @@ fun SearchTab(ui: Ui, cat: Catalog) {
     val (artists, albums, allTracks) = found
     // Larger genres first among equal matches, so a typo like "rokc" still shows Rock and not only Acoustic Rock.
     val genres = remember(cat, fq) { if (fq.folded.length < 2) emptyList() else cat.genres.filter { it.first.isNotEmpty() }.sortedByDescending { it.second.size }.search(fq) { searchFold(it.first) } }
+    val playlists = remember(fq, ui.version) { if (fq.folded.length < 2) emptyList() else ui.app.playlists.all.search(fq) { searchFold(it.name) } }
     val tracks = remember(allTracks) { allTracks.take(200) }
     @Composable fun more(n: Int, what: String) {
         if (n > 0) Text("$n more $what. Refine the search to see them", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = Muted)
     }
     Column {
-        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", focus = q.isEmpty())
+        SearchBox(ui.query, { ui.query = it }, "Artist, album, track or genre", focus = ui.searchTaps)
         LazyColumn(contentPadding = listPadding()) {
             if (q.length == 1) item { Text("Type at least 2 letters", Modifier.padding(20.dp), color = Muted) }
-            else if (q.length >= 2 && genres.isEmpty() && artists.isEmpty() && albums.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
+            else if (q.length >= 2 && genres.isEmpty() && artists.isEmpty() && albums.isEmpty() && playlists.isEmpty() && tracks.isEmpty()) item { Text("Nothing found for “$q”", Modifier.padding(20.dp), color = Muted) }
             if (artists.isNotEmpty()) item { SectionTitle("Artists") }
             items(artists.take(10), key = { "r" + it.first }) { (name, albums) -> ArtistRow(ui, name, albums, inTab = Tab.Library) }
             item { more(artists.size - 10, "artists") }
             if (genres.isNotEmpty()) item { SectionTitle("Genres") }
             items(genres.take(5), key = { "g" + it.first }) { (name, albums) ->
                 ListRow(Icons.Default.Category, name, if (albums.size == 1) "1 album" else "${albums.size} albums") { ui.open(Screen.GenreView(name), Tab.Library) }
+            }
+            if (playlists.isNotEmpty()) item { SectionTitle("Playlists") }
+            items(playlists, key = { "p" + it.id }) { p ->
+                ListRow(Icons.AutoMirrored.Filled.QueueMusic, p.name, "${p.trackIds.size} tracks") { ui.open(Screen.PlaylistView(p.id), Tab.Playlists) }
             }
             if (albums.isNotEmpty()) item { SectionTitle("Albums") }
             items(albums.take(30), key = { "a" + it.id }) { AlbumRow(ui, it) }
@@ -531,9 +512,6 @@ fun PlaylistArt(ui: Ui, covers: List<String?>) {
 fun PlaylistsTab(ui: Ui, cat: Catalog) {
     val lists = remember(ui.version) { ui.app.playlists.all }
     val likedCount = remember(cat, ui.version) { cat.tracks.count { ui.library.isLiked(it) } }
-    var q by rememberSaveable { mutableStateOf("") }
-    val fq = remember(q) { Query(q) }
-    val shown = remember(lists, fq) { lists.filterBy(fq) { searchFold(it.name) } }
     // Covers and the total time of each playlist, for its row.
     val details = remember(lists, cat) {
         lists.associate { p ->
@@ -541,51 +519,48 @@ fun PlaylistsTab(ui: Ui, cat: Catalog) {
             p.id to (tracks.map { it.album }.distinct().take(4).map { it.cover } to tracks.sumOf { it.duration })
         }
     }
-    Column {
-        FilterField(ui, q) { q = it }
-        LazyColumn(contentPadding = listPadding()) {
-            if (fq.isEmpty()) item {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(12.dp))
-                            .background(Brush.linearGradient(listOf(LikedTint, Color(0xFF2A1D22)))).clickable { ui.open(Screen.LikedView) }.padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)), Alignment.Center) {
-                            Icon(Icons.Default.Favorite, null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
-                        Column(Modifier.padding(start = 14.dp)) {
-                            Text("Liked", style = MaterialTheme.typography.titleLarge)
-                            Text("$likedCount tracks", style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        @Composable fun tile(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) = Row(
-                            Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF161616)).clickable(onClick = onClick).padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(icon, null, Modifier.size(22.dp), tint = Color(0xFFC9C9C9))
-                            Text(text, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        tile("History", Icons.Default.History) { ui.open(Screen.HistoryView) }
-                        tile("Recently added", Icons.Default.LibraryAdd) {
-                            ui.prefs.albumSort.set(AlbumSort.Recent.name); ui.showSection(LibrarySection.Albums); ui.stacks[Tab.Library] = listOf(Screen.Root); ui.tab = Tab.Library
-                        }
-                    }
-                }
-                if (lists.isNotEmpty()) Text("Your playlists", Modifier.padding(20.dp, 18.dp, 20.dp, 6.dp), style = MaterialTheme.typography.titleLarge)
-            }
-            items(shown, key = { it.id }) { p ->
-                val (covers, time) = details[p.id] ?: (emptyList<String?>() to 0.0)
+    LazyColumn(contentPadding = listPadding()) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { ui.open(Screen.PlaylistView(p.id)) }.padding(horizontal = 20.dp).height(72.dp),
+                    Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(12.dp))
+                        .background(Brush.linearGradient(listOf(LikedTint, Color(0xFF2A1D22)))).clickable { ui.open(Screen.LikedView) }.padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PlaylistArt(ui, covers)
-                    Column(Modifier.padding(start = 14.dp)) {
-                        Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${p.trackIds.size} tracks · ${formatTime(time)}", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)), Alignment.Center) {
+                        Icon(Icons.Default.Favorite, null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
                     }
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text("Liked", style = MaterialTheme.typography.titleLarge)
+                        Text("$likedCount tracks", style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9C9C9))
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    @Composable fun tile(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) = Row(
+                        Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF161616)).clickable(onClick = onClick).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, null, Modifier.size(22.dp), tint = Color(0xFFC9C9C9))
+                        Text(text, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    tile("History", Icons.Default.History) { ui.open(Screen.HistoryView) }
+                    tile("Recently added", Icons.Default.LibraryAdd) {
+                        ui.prefs.albumSort.set(AlbumSort.Recent.name); ui.showSection(LibrarySection.Albums); ui.stacks[Tab.Library] = listOf(Screen.Root); ui.tab = Tab.Library
+                    }
+                }
+            }
+            if (lists.isNotEmpty()) Text("Your playlists", Modifier.padding(20.dp, 18.dp, 20.dp, 6.dp), style = MaterialTheme.typography.titleLarge)
+        }
+        items(lists, key = { it.id }) { p ->
+            val (covers, time) = details[p.id] ?: (emptyList<String?>() to 0.0)
+            Row(
+                Modifier.fillMaxWidth().clickable { ui.open(Screen.PlaylistView(p.id)) }.padding(horizontal = 20.dp).height(72.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlaylistArt(ui, covers)
+                Column(Modifier.padding(start = 14.dp)) {
+                    Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${p.trackIds.size} tracks · ${formatTime(time)}", style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
         }

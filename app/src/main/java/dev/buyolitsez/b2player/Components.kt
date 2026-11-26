@@ -47,7 +47,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -134,19 +136,28 @@ fun Pill(text: String, icon: ImageVector? = null, active: Boolean = false, progr
 }
 
 /**
- * Filled rounded search field without an outline. While [focus] is true it takes the focus and opens the keyboard,
- * one frame late so that the keyboard hiding on a screen change (see MainActivity) does not close it again.
+ * Filled rounded search field without an outline. Each new [focus] above 0 (a tap on a search button) makes it take
+ * the focus and open the keyboard, one frame late so that the keyboard hiding on a screen change (see MainActivity)
+ * does not close it again. The cross clears the text, and with [onClose] also closes the field.
  */
 @Composable
-fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, focus: Boolean = false) {
+fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, focus: Int = 0, onClose: (() -> Unit)? = null) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val requester = remember { FocusRequester() }
-    LaunchedEffect(focus) { if (focus) { awaitFrame(); runCatching { requester.requestFocus() }; keyboard?.show() } }
+    LaunchedEffect(focus) { if (focus > 0) { awaitFrame(); runCatching { requester.requestFocus() }; keyboard?.show() } }
+    // With the cursor at the end of the text it starts with: a String field would put it before the text.
+    var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    if (field.text != value) field = TextFieldValue(value, TextRange(value.length))
     TextField(
-        value, onChange, Modifier.focusRequester(requester).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
+        field, { field = it; if (it.text != value) onChange(it.text) }, Modifier.focusRequester(requester).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
         placeholder = { Text(placeholder, color = Faint) }, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
-        trailingIcon = { if (value.isNotEmpty()) SmallIcon(Icons.Default.Close) { onChange("") } },
+        trailingIcon = {
+            if (value.isNotEmpty() || onClose != null) SmallIcon(Icons.Default.Close) {
+                onChange("")
+                onClose?.let { focusManager.clearFocus(); it() }
+            }
+        },
         shape = RoundedCornerShape(12.dp), textStyle = MaterialTheme.typography.bodyLarge,
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Gray2, unfocusedContainerColor = Gray2,
@@ -158,14 +169,19 @@ fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, fo
 }
 
 /**
- * Search field above a list, opened with the search button in the top bar; the screen filters its
- * own list with a [Query] of the text. A filled-in filter stays visible, and erasing it keeps it open.
+ * Search field above a list, opened with the search button in the top bar (see [Ui.searchTaps]); the screen filters
+ * its own list with a [Query] of the text. A filled-in filter stays when coming back to the screen; the cross clears and closes it.
  */
 @UnstableApi
 @Composable
-fun FilterField(ui: Ui, value: String, onChange: (String) -> Unit) {
-    if (!ui.filterOpen && value.isEmpty()) return
-    SearchBox(value, { if (it.isEmpty()) ui.filterOpen = true; onChange(it) }, "Search", focus = ui.filterOpen)
+fun FilterField(ui: Ui, value: String, onChange: (String) -> Unit) = FilterField(ui.searchTaps, { ui.searchTaps = it }, value, onChange)
+
+/** [FilterField] with its own count of search button taps, for the queue, which isn't a screen. */
+@Composable
+fun FilterField(taps: Int, setTaps: (Int) -> Unit, value: String, onChange: (String) -> Unit) {
+    if (taps == 0 && value.isEmpty()) return
+    // Typing in a kept filter opens it, so erasing its text doesn't hide the field.
+    SearchBox(value, { if (taps == 0) setTaps(1); onChange(it) }, "Search", taps, onClose = { setTaps(0) })
 }
 
 /** A small grey label in capitals above a group of rows. */

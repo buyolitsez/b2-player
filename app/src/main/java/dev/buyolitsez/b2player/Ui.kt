@@ -79,12 +79,16 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     var tab by mutableStateOf(startTab())
     var section by mutableStateOf(LibrarySection.entries.firstOrNull { it.name == prefs.librarySection.value } ?: LibrarySection.Albums)
         private set
-    fun showSection(s: LibrarySection) { section = s; selection = emptyList(); prefs.librarySection.set(s.name) }
+    fun showSection(s: LibrarySection) { section = s; selection = emptyList(); searchTaps = 0; prefs.librarySection.set(s.name) }
     /** Now playing, and the queue on top of it, cover the tabs. */
     var nowOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
-    /** The search field above a list is shown; it closes when the screen changes. */
-    var filterOpen by mutableStateOf(false)
+    /**
+     * Taps on a search button since the screen opened, 0 if none: the search field shows from the first tap,
+     * and each tap focuses it and opens the keyboard. Tapping the Search tab counts too. It is reset as the screen
+     * changes, not after, so the next screen neither flashes the field nor opens the keyboard.
+     */
+    var searchTaps by mutableIntStateOf(0)
     val stacks = mutableStateMapOf<Tab, List<Screen>>()
     var status by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
@@ -194,7 +198,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     fun stack(t: Tab = tab) = stacks[t] ?: listOf(Screen.Root)
     /** Opening a screen closes Now playing; [section] also switches the Library tab to it. */
     fun open(s: Screen, inTab: Tab? = null, section: LibrarySection? = null) {
-        nowOpen = false; queueOpen = false; selection = emptyList()
+        nowOpen = false; queueOpen = false; selection = emptyList(); searchTaps = 0
         val from = tab
         if (inTab != null) tab = inTab
         if (section != null) showSection(section)
@@ -207,6 +211,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         if (queueOpen) { queueOpen = false; return true }
         if (nowOpen) { nowOpen = false; return true }
         if (selection.isNotEmpty()) { selection = emptyList(); return true }
+        searchTaps = 0
         val st = stack()
         if (st.size > 1) {
             stacks[tab] = st.dropLast(1)
@@ -219,6 +224,7 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
     }
     fun selectTab(t: Tab) {
         returnTo = null; selection = emptyList()
+        searchTaps = if (t == Tab.Search) searchTaps + 1 else 0
         if (t == tab && stack().size > 1) stacks[t] = listOf(Screen.Root) else tab = t
     }
 

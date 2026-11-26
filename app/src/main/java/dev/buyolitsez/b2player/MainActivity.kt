@@ -227,9 +227,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     BackHandler {
         if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
-    // Leaving a screen closes its search field and the keyboard, which would otherwise stay over the next screen.
+    // Leaving a screen closes the keyboard, which would otherwise stay over the next screen (its search field closes in Ui).
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { ui.filterOpen = false; focusManager.clearFocus(); keyboard?.hide() }
+    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { focusManager.clearFocus(); keyboard?.hide() }
     // Scrolling a list closes the keyboard too, so the results under it can be seen; the typed text stays.
     val ime by rememberUpdatedState(imeVisible)
     val hideKeyboardOnScroll = remember {
@@ -261,7 +261,6 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     val barFade = with(LocalDensity.current) { 20.dp.toPx() }
     // Screens that have a search field above their list.
     val hasFilter = when (screen) {
-        Screen.Root -> ui.tab != Tab.Search
         is Screen.ArtistView, is Screen.GenreView, is Screen.FolderView, is Screen.PlaylistView, Screen.LikedView, Screen.Downloads -> true
         else -> false
     }
@@ -296,7 +295,7 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                     },
                     navigationIcon = { if (stack.size > 1) IconButton({ ui.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                     actions = {
-                        if (hasFilter) IconButton({ ui.filterOpen = !ui.filterOpen }) { Icon(Icons.Default.Search, "Search in this list") }
+                        if (hasFilter) IconButton({ ui.searchTaps++ }) { Icon(Icons.Default.Search, "Search in this list") }
                         // Tap: liked tracks only or everything; long press: tracks that aren't liked.
                         if (likeFiltered) {
                             val f = ui.libraryFilter
@@ -409,8 +408,6 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                             screen == Screen.HistoryView -> HistoryScreen(ui, full)
                             else -> when (ui.tab) {
                                 Tab.Library -> Column {
-                                    // One search text for all the sections, so switching from Albums to Tracks keeps it.
-                                    val query = rememberSaveable { mutableStateOf("") }
                                     Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                         val chips = rememberScrollState()
                                         Row(
@@ -436,11 +433,11 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
                                         ) { Icon(Icons.Default.PlayArrow, "Play all", Modifier.size(24.dp), tint = UiColor.Black) }
                                     }
                                     when (ui.section) {
-                                        LibrarySection.Albums -> AlbumsTab(ui, c, query)
-                                        LibrarySection.Tracks -> TracksTab(ui, c, query)
-                                        LibrarySection.Artists -> ArtistsTab(ui, c, query)
-                                        LibrarySection.Genres -> GenresTab(ui, c, query)
-                                        LibrarySection.Folders -> FolderScreen(ui, c, "", query)
+                                        LibrarySection.Albums -> AlbumsTab(ui, c)
+                                        LibrarySection.Tracks -> TracksTab(ui, c)
+                                        LibrarySection.Artists -> ArtistsTab(ui, c)
+                                        LibrarySection.Genres -> GenresTab(ui, c)
+                                        LibrarySection.Folders -> FolderScreen(ui, c, "")
                                     }
                                 }
                                 Tab.Playlists -> PlaylistsTab(ui, full)
