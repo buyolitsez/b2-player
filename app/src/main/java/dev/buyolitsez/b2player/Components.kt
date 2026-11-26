@@ -47,7 +47,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -144,8 +146,11 @@ fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String, fo
     val keyboard = LocalSoftwareKeyboardController.current
     val requester = remember { FocusRequester() }
     LaunchedEffect(focus) { if (focus > 0) { awaitFrame(); runCatching { requester.requestFocus() }; keyboard?.show() } }
+    // With the cursor at the end of the text it starts with: a String field would put it before the text.
+    var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    if (field.text != value) field = TextFieldValue(value, TextRange(value.length))
     TextField(
-        value, onChange, Modifier.focusRequester(requester).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
+        field, { field = it; if (it.text != value) onChange(it.text) }, Modifier.focusRequester(requester).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), singleLine = true,
         placeholder = { Text(placeholder, color = Faint) }, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
         trailingIcon = {
             if (value.isNotEmpty() || onClose != null) SmallIcon(Icons.Default.Close) {

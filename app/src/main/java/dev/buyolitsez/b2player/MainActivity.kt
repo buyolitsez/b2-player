@@ -227,13 +227,9 @@ fun Root(ui: Ui, importM3u: () -> Unit) {
     BackHandler {
         if (imeVisible) focusManager.clearFocus() else if (!ui.back()) activity?.moveTaskToBack(true)
     }
-    // Leaving a screen closes its search field and the keyboard, which would otherwise stay over the next screen.
-    // Only a tap on the Search tab leads to it with the keyboard open, not coming back to it.
+    // Leaving a screen closes the keyboard, which would otherwise stay over the next screen (its search field closes in Ui).
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) {
-        if (screen != Screen.Root || ui.tab != Tab.Search) ui.searchTaps = 0
-        focusManager.clearFocus(); keyboard?.hide()
-    }
+    LaunchedEffect(screen, ui.tab, ui.section, ui.nowOpen) { focusManager.clearFocus(); keyboard?.hide() }
     // Scrolling a list closes the keyboard too, so the results under it can be seen; the typed text stays.
     val ime by rememberUpdatedState(imeVisible)
     val hideKeyboardOnScroll = remember {
