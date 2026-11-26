@@ -138,8 +138,11 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         }
         if (gone.isEmpty()) return
         removeFromPlayer(gone)
-        // A queue row's menu keeps its index, which now may point at another track.
-        if (trackMenu?.queueIndex != null) trackMenu = null
+        // A queue row's menu stays open: its index follows the track, or is dropped when the track left the queue.
+        trackMenu?.let { m ->
+            val i = m.queueIndex ?: return@let
+            trackMenu = TrackMenuRequest(m.track, if (i in gone) null else i - gone.count { it < i }, m.extra)
+        }
     }
 
     /**
