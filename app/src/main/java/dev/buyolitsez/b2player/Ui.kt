@@ -422,10 +422,17 @@ class Ui(val context: Context, val app: App, val scope: CoroutineScope) {
         c.removeMediaItems(0, cur)
         c.addMediaItems(0, before)
         c.addMediaItems(after)
-        if (order != null) c.sendCustomCommand(SHUFFLE_ORDER, Bundle().apply {
-            putIntArray("order", order.toIntArray())
-            putInt("ids", (before.map { it.mediaId } + c.currentMediaItem?.mediaId + after.map { it.mediaId }).hashCode())
-        })
+        if (order != null) {
+            val ids = before.map { it.mediaId } + c.currentMediaItem?.mediaId + after.map { it.mediaId }
+            c.sendCustomCommand(SHUFFLE_ORDER, Bundle().apply {
+                putIntArray("order", order.toIntArray())
+                putInt("ids", ids.hashCode())
+            })
+            // Until the player's order arrives the controller has the queue in queue order: a quick next tap
+            // would take that for the play order and unshuffle the queue, and the rows would jump there and back.
+            movedOrder = ids.filterNotNull() to order
+            if (queueIds == movedOrder?.first) playOrder = order
+        }
         // A new shuffle order with the current track first; added tracks would otherwise go in order.
         else if (c.shuffleModeEnabled) { c.shuffleModeEnabled = false; c.shuffleModeEnabled = true }
     }
